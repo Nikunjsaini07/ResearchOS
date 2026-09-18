@@ -1,0 +1,13 @@
+fastapi>=0.115,<1
+uvicorn[standard]>=0.34,<1
+sqlalchemy>=2.0,<3
+psycopg[binary]>=3.2,<4
+httpx>=0.28,<1
+pypdf>=5.4,<7
+python-multipart>=0.0.20
+python-dotenv>=1.1,<2
+langgraph>=0.4,<2
+pytest>=8.3,<10
+# Optional shared cache and native PostgreSQL vector storage.
+redis>=5,<9
+pgvector>=0.4,<1
