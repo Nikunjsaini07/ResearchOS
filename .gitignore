@@ -1,0 +1,22 @@
+node_modules/
+dist/
+.venv/
+__pycache__/
+.pytest_cache/
+.env
+data/
+*.pyc
+test-results/
+playwright-report/
+
+# Generated build metadata and PDF test fixture
+*.tsbuildinfo
+tests/fixture.pdf
+
+# Superseded UI captures and original duplicate reference image
+docs/auth-desktop.png
+docs/dashboard-desktop.png
+docs/dashboard-mobile.png
+docs/workspace-desktop.png
+docs/workspace-mobile.png
+e407a58f-de12-4739-9759-c424d79c7f8e.png
