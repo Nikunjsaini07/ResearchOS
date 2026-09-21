@@ -13,8 +13,6 @@ import {
   Loader2,
   X,
   Paperclip,
-  History,
-  Settings2,
   FileText,
   Download,
   ExternalLink,
@@ -22,7 +20,6 @@ import {
   Quote,
   RefreshCw,
   AlertCircle,
-  LogOut,
   Feather,
   Network,
 } from "lucide-react";
@@ -71,11 +68,6 @@ const steps = [
     icon: Feather,
     verb: "Bringing it together",
   },
-];
-const prompts = [
-  "How can we make AI hallucinate less?",
-  "What is next for solar energy?",
-  "How does sleep affect memory?",
 ];
 function Brand() {
   return (
@@ -167,7 +159,6 @@ export default function App() {
   const [project, setProject] = useState<Project | null>(null),
     [papers, setPapers] = useState<Paper[]>([]),
     [job, setJob] = useState<Job | null>(null),
-    [history, setHistory] = useState<Project[]>([]),
     [messages, setMessages] = useState<Message[]>([]);
   const [busy, setBusy] = useState(""),
     [error, setError] = useState(""),
@@ -179,6 +170,7 @@ export default function App() {
     [config, setConfig] = useState<{
       ai_configured: boolean;
       model: string;
+      free_only: boolean;
     } | null>(null),
     [activity, setActivity] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null),
@@ -189,9 +181,9 @@ export default function App() {
     job?.events
       .slice()
       .reverse()
-      .find((e) => e.stage)?.stage || "plan";
+      .find((e) => e.stage)?.stage || job?.kind || "plan";
   const stageIndex = steps.findIndex((s) => s.id === stage),
-    finished = job?.status === "completed" && !!project?.report;
+    finished = !running && !!project?.report;
   const navigate = (next: string | null) => {
     location.hash = next ? "research/" + next : "";
     setId(next);
@@ -199,6 +191,7 @@ export default function App() {
     setTab("Answer");
     setSource(null);
     setProject(null);
+    setPapers([]);
     setJob(null);
     setMessages([]);
   };
@@ -288,9 +281,13 @@ export default function App() {
     });
   const retry = () =>
     action("retry", async () => {
-      await api("/projects/" + id + "/run/research", post());
+      await api("/projects/" + id + "/run/" + (job?.kind || "research"), post());
       await load(id!);
     });
+  const runStep = (kind: string) => action(kind, async () => {
+    await api("/projects/" + id + "/run/" + kind, post());
+    await load(id!);
+  });
   const showSource = (eid: string, claim?: Claim) => {
     const e = project?.analysis.evidence?.find((e) => e.id === eid);
     if (e) {
@@ -330,26 +327,6 @@ export default function App() {
               <span>New question</span>
             </button>
           )}
-          <button
-            className="nav-button"
-            onClick={() =>
-              action("history", async () => {
-                await ensureUser();
-                setHistory(await api("/projects"));
-                setModal("history");
-              })
-            }
-          >
-            <History size={16} />
-            <span>Your explorations</span>
-          </button>
-          <button
-            className="icon-button header-settings"
-            aria-label="Settings"
-            onClick={() => setModal("settings")}
-          >
-            <Settings2 size={18} />
-          </button>
         </nav>
       </header>
       {error && (
@@ -442,19 +419,6 @@ export default function App() {
               </button>
             </div>
           </form>
-          <div className="suggestions">
-            <span>A little inspiration</span>
-            {prompts.map((p) => (
-              <button key={p} onClick={() => setQuestion(p)}>
-                {p}
-                <ArrowUpRight size={13} />
-              </button>
-            ))}
-          </div>
-          <div className="home-footnote">
-            <BookOpen size={14} />
-            Real papers. Clear sources. Room for your own thinking.
-          </div>
           <input
             ref={fileRef}
             type="file"
@@ -510,7 +474,7 @@ export default function App() {
             </div>
             <div className="trail">
               {steps.map((s, i) => {
-                const done = finished || i < stageIndex,
+                const done = finished || (running && i < stageIndex) || (!running && !!project?.analysis.papers && i < 4),
                   current = running && i === stageIndex;
                 return (
                   <React.Fragment key={s.id}>
@@ -583,7 +547,7 @@ export default function App() {
           <div className="result-layout">
             <section className="answer-panel">
               <div className="answer-tabs">
-                {["Answer", "Sources", "Research gaps"].map((t) => (
+                {["Answer", "Compare", "Sources", "Research gaps"].map((t) => (
                   <button
                     key={t}
                     className={tab === t ? "active" : ""}
@@ -605,6 +569,12 @@ export default function App() {
                   </a>
                 )}
               </div>
+              {!running && project?.analysis.papers && !project.report && (
+                <div className="workspace-tools">
+                  <p>Your findings changed. Update the report to download the latest review.</p>
+                  <button className="button" disabled={!!busy} onClick={() => runStep("report")}>Generate report</button>
+                </div>
+              )}
               {running && !project?.analysis.papers ? (
                 <div className="working">
                   <div className="working-orbit">
@@ -657,11 +627,9 @@ export default function App() {
                         <div className="honest-note">
                           <Leaf size={16} />
                           <p>
-                            These are original source passages.{" "}
-                            <button onClick={() => setModal("settings")}>
-                              Connect an AI provider
-                            </button>{" "}
-                            for a synthesized answer and deeper comparisons.
+                            {project.analysis.note?.includes("free model")
+                              ? project.analysis.note
+                              : "These are original source passages. Open Sources to inspect the full paper set."}
                           </p>
                         </div>
                       )}
@@ -673,6 +641,7 @@ export default function App() {
                           </div>
                           {p.claims
                             .filter((c) => c.status !== "unsupported")
+                            .slice(0, project.analysis.mode === "extractive" ? 2 : undefined)
                             .map((c, j) => (
                               <div className="finding" key={j}>
                                 {project.analysis.mode !== "extractive" && (
@@ -681,11 +650,16 @@ export default function App() {
                                   </span>
                                 )}
                                 <p>
-                                  {c.text}
+                                  {project.analysis.mode === "extractive" && c.text.length > 700
+                                    ? c.text.slice(0, 700).trimEnd().replace(/[.,;:]$/, "") + "…"
+                                    : c.text}
                                   {citations(c)}
                                 </p>
                               </div>
                             ))}
+                          {project.analysis.mode === "extractive" && p.claims.filter((c) => c.status !== "unsupported").length > 2 && (
+                            <p className="source-limit-note">Showing the two most relevant passages. Open Sources to inspect the full paper set.</p>
+                          )}
                         </section>
                       ))}
                       <div className="answer-end">
@@ -714,15 +688,55 @@ export default function App() {
                     </div>
                   )}
                 </div>
+              ) : tab === "Compare" ? (
+                <div className="comparison-panel">
+                  <p className="comparison-note">Compare reported evidence. Different datasets and evaluation methods may make results incomparable.</p>
+                  {project?.analysis.papers?.length ? (
+                    <div className="comparison-scroll" tabIndex={0} role="region" aria-label="Paper comparison">
+                      <table className="comparison-table">
+                        <thead><tr><th scope="col">Evidence</th>{project.analysis.papers.map(p => <th scope="col" key={p.paper_id}>{p.title}</th>)}</tr></thead>
+                        <tbody>{["Method", "Dataset", "Results", "Limitations"].map(dimension => (
+                          <tr key={dimension}><th scope="row">{dimension}</th>{project.analysis.papers!.map(p => {
+                            const claims = p.claims.filter(c => c.status !== "unsupported" && c.dimension.toLowerCase().replace(/s$/, "") === dimension.toLowerCase().replace(/s$/, ""));
+                            return <td key={p.paper_id}>{claims.length ? claims.map((c, i) => <p key={i}>{c.text}{citations(c)}</p>) : <span className="not-reported">Not reported in extracted findings</span>}</td>;
+                          })}</tr>
+                        ))}</tbody>
+                      </table>
+                    </div>
+                  ) : <div className="empty-state"><BookOpen size={30}/><h2>Evidence comes first.</h2><p>Analyze your selected papers to compare their findings here.</p></div>}
+                </div>
               ) : tab === "Sources" ? (
                 <div className="sources-list">
+                  <div className="workspace-tools">
+                    <p>Select up to 20 papers, then rebuild your answer. Changing the selection clears the previous findings.</p>
+                    <button className="button" disabled={!!busy || running || !papers.some(p => p.selected)} onClick={() => runStep("refine")}>Analyze selected papers</button>
+                    <label className="quiet-button upload-label">Add PDF
+                      <input aria-label="Add PDF to research" type="file" accept="application/pdf" disabled={!!busy || running} onChange={e => {
+                        const file = e.target.files?.[0]; e.target.value = "";
+                        if (file) action("upload", async () => {
+                          const form = new FormData(); form.append("file", file);
+                          await api("/projects/" + id + "/upload", {method: "POST", body: form});
+                          await load(id!);
+                        });
+                      }}/>
+                    </label>
+                  </div>
                   {papers
-                    .filter((p) => p.selected)
                     .map((p, i) => (
                       <article className="source-card" key={p.id}>
-                        <span className="source-index">
-                          {String(i + 1).padStart(2, "0")}
-                        </span>
+                        <input type="checkbox" aria-label={"Include " + p.title} checked={p.selected} disabled={!!busy || running || (!p.selected && papers.filter(p => p.selected).length >= 20)} onChange={e => {
+                          const selected = e.target.checked;
+                          setPapers(current => current.map(paper => paper.id === p.id ? {...paper, selected} : paper));
+                          action("selection", async () => {
+                            try {
+                              await api("/projects/" + id + "/papers/" + p.id, {method: "PATCH", body: JSON.stringify({selected})});
+                            } catch (error) {
+                              setPapers(current => current.map(paper => paper.id === p.id ? {...paper, selected: !selected} : paper));
+                              throw error;
+                            }
+                            await load(id!);
+                          });
+                        }}/>
                         <div>
                           <div className="paper-meta">
                             {p.source} · {p.year || "Uploaded paper"}
@@ -796,7 +810,7 @@ export default function App() {
                       <p>
                         {config?.ai_configured
                           ? "No sufficiently supported gaps have been identified yet."
-                          : "Connect an AI provider to explore potential gaps in this collection."}
+                          : "No synthesized research gaps are available for this run."}
                       </p>
                     </div>
                   )}
@@ -876,11 +890,6 @@ export default function App() {
                   <Leaf size={20} />
                 </span>
                 <span className="eyebrow">A NOTE FROM THE FIELD</span>
-                <h3>
-                  Stay curious.
-                  <br />
-                  Keep the source close.
-                </h3>
                 <p>
                   Every finding has a paper behind it. Tap a citation to read
                   the original passage and see the full picture.
@@ -895,227 +904,37 @@ export default function App() {
               {project?.plan.queries && (
                 <div className="search-notes">
                   <span className="eyebrow">TRAILS WE’RE FOLLOWING</span>
-                  {project.plan.queries.map((q) => (
-                    <div key={q}>
-                      <Search size={13} />
-                      {q}
-                    </div>
-                  ))}
+                  <form key={project.plan.queries.join("|")} onSubmit={e => {
+                    e.preventDefault();
+                    const data = new FormData(e.currentTarget);
+                    const queries = String(data.get("queries")).split("\n").map(q => q.trim()).filter(Boolean);
+                    action("discover", async () => {
+                      await api("/projects/" + id + "/plan", {method: "PATCH", body: JSON.stringify({queries})});
+                      await api("/projects/" + id + "/run/discover", post());
+                      await load(id!); setTab("Sources");
+                    });
+                  }}>
+                    <label htmlFor="search-queries">Search queries (one per line, up to 3)</label>
+                    <textarea id="search-queries" name="queries" rows={5} required defaultValue={project.plan.queries.join("\n")} disabled={running || !!busy}/>
+                    <button className="quiet-button" disabled={running || !!busy}>Find more papers</button>
+                  </form>
                 </div>
               )}
+              <button className="quiet-button delete-project" disabled={running || !!busy} onClick={() => setModal("delete-project")}>Delete this research</button>
             </aside>
           </div>
-          <footer className="research-footer">
-            <Leaf size={13} />A little further than where you started.
-          </footer>
         </main>
       )}
-      {modal === "history" && (
-        <Modal title="Your explorations" close={() => setModal("")}>
-          <p className="modal-description">
-            Every question is a little place you’ve been.
-          </p>
-          <div className="history-list">
-            {history.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => {
-                  setModal("");
-                  navigate(p.id);
-                }}
-              >
-                <span>
-                  <Compass size={18} />
-                </span>
-                <div>
-                  <strong>{p.question}</strong>
-                  <small>
-                    {new Date(p.created).toLocaleDateString("en", {
-                      month: "short",
-                      day: "numeric",
-                    })}{" "}
-                    · {p.paper_count} papers
-                  </small>
-                </div>
-                <ArrowUpRight size={17} />
-              </button>
-            ))}
-            {!history.length && (
-              <div className="empty-state">
-                <Leaf size={30} />
-                <h3>Your first adventure is waiting.</h3>
-                <p>Ask a question to get started.</p>
-              </div>
-            )}
+      {modal === "delete-project" && (
+        <Modal title="Delete this research?" close={() => setModal("")}>
+          <p className="modal-description">This permanently removes this project, its uploaded PDFs, findings, and conversation.</p>
+          <div className="workspace-tools">
+            <button className="quiet-button" onClick={() => setModal("")}>Keep research</button>
+            <button className="button" disabled={!!busy} onClick={() => action("delete", async () => {
+              await api("/projects/" + id, {method: "DELETE"});
+              setModal(""); navigate(null);
+            })}>Delete permanently</button>
           </div>
-        </Modal>
-      )}
-      {modal === "settings" && (
-        <Modal title="Make yourself at home" close={() => setModal("")}>
-          <div className="settings-intro">
-            <span>
-              <Leaf size={22} />
-            </span>
-            <div>
-              <h3>{user?.name || "Hello, curious mind."}</h3>
-              <p>
-                {user?.email.endsWith("@guest.local")
-                  ? "A guest workspace, just for this browser."
-                  : user?.email || "Start exploring without an account."}
-              </p>
-            </div>
-          </div>
-          <div className="setting-block">
-            <div className="setting-heading">
-              <h3>Your research companion</h3>
-              <span className={config?.ai_configured ? "connected" : ""}>
-                {config?.ai_configured ? "Connected" : "Not connected"}
-              </span>
-            </div>
-            <p>
-              {config?.ai_configured
-                ? "Your AI provider is ready to connect the dots."
-                : "Paper discovery and reading work right away. Add an AI provider for synthesized answers, comparisons, and research gaps."}
-            </p>
-            {!config?.ai_configured && (
-              <>
-                <p className="setup-copy">
-                  Add these server settings to <code>F:\Raglearn\.env</code>,
-                  then restart the backend:
-                </p>
-                <pre>LLM_API_KEY=your-key{"\n"}LLM_MODEL=gpt-4.1-mini</pre>
-                <small>
-                  For another compatible provider, also set LLM_BASE_URL. Never
-                  paste a key into a chat.
-                </small>
-              </>
-            )}
-            <button
-              className="quiet-button"
-              onClick={() =>
-                action("settings", async () => {
-                  await ensureUser();
-                  setConfig(await api("/settings"));
-                })
-              }
-            >
-              <RefreshCw size={13} />
-              Refresh connection
-            </button>
-          </div>
-          <div className="account-actions">
-            {(!user || user.email.endsWith("@guest.local")) && (
-              <>
-                <button
-                  className="button"
-                  onClick={() => setModal("save-account")}
-                >
-                  Keep your workspace
-                  <ArrowUpRight size={14} />
-                </button>
-                <button
-                  className="quiet-button"
-                  onClick={() => setModal("login")}
-                >
-                  Sign in to an account
-                </button>
-              </>
-            )}
-            {user && !user.email.endsWith("@guest.local") && (
-              <button
-                className="quiet-button"
-                onClick={() =>
-                  action("logout", async () => {
-                    await api("/auth/logout", post());
-                    setUser(null);
-                    setConfig(null);
-                    setModal("");
-                    navigate(null);
-                  })
-                }
-              >
-                <LogOut size={14} />
-                Sign out
-              </button>
-            )}
-          </div>
-          {user?.email.endsWith("@guest.local") && (
-            <p className="session-note">
-              Guest access lasts 7 days and depends on this browser’s cookie.
-              Save an account to keep access to your research.
-            </p>
-          )}
-        </Modal>
-      )}
-      {(modal === "login" || modal === "save-account") && (
-        <Modal
-          title={
-            modal === "login"
-              ? "Welcome back."
-              : "Keep your little corner of curiosity."
-          }
-          close={() => setModal("")}
-        >
-          <form
-            className="account-form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const data = Object.fromEntries(new FormData(e.currentTarget));
-              action("account", async () => {
-                if (modal === "save-account") await ensureUser();
-                const u = await api<User>(
-                  modal === "login" ? "/auth/login" : "/auth/claim",
-                  post(data),
-                );
-                setUser(u);
-                setConfig(await api("/settings"));
-                setModal("");
-                if (modal === "login") navigate(null);
-              });
-            }}
-          >
-            {modal === "save-account" && (
-              <label>
-                Your name
-                <input
-                  name="name"
-                  required
-                  maxLength={100}
-                  placeholder="Alex Morgan"
-                />
-              </label>
-            )}
-            <label>
-              Email address
-              <input
-                name="email"
-                type="email"
-                required
-                placeholder="you@example.com"
-              />
-            </label>
-            <label>
-              Password
-              <input
-                name="password"
-                type="password"
-                minLength={8}
-                required
-                placeholder="At least 8 characters"
-              />
-            </label>
-            {error && <p className="form-error">{error}</p>}
-            <button className="button full" disabled={!!busy}>
-              {busy ? (
-                <Loader2 className="spin" size={17} />
-              ) : modal === "login" ? (
-                "Sign in"
-              ) : (
-                "Save my workspace"
-              )}
-              <ArrowUpRight size={16} />
-            </button>
-          </form>
         </Modal>
       )}
       {source && (

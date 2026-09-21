@@ -34,6 +34,8 @@ from backend.db import (
 from backend.research import (
     WORKFLOWS,
     configured,
+    free_only,
+    embeddings_enabled,
     retrieve,
     llm,
     validate_claims,
@@ -360,8 +362,9 @@ def me(user=Depends(current_user)):
 def settings(user=Depends(current_user)):
     return {
         "ai_configured": configured(),
+        "free_only": free_only(),
         "model": os.getenv("LLM_MODEL", "gpt-4.1-mini"),
-        "embeddings_configured": bool(os.getenv("EMBEDDING_API_KEY") or configured()),
+        "embeddings_configured": embeddings_enabled() and bool(os.getenv("EMBEDDING_API_KEY") or configured()),
         "database": "PostgreSQL" if "postgres" in str(engine.url) else "SQLite",
         "search_source": "arXiv",
         "max_pdf_mb": 25,
@@ -439,7 +442,7 @@ def run(pid: str, kind: str, user=Depends(current_user), db=Depends(db_session))
             409,
             "Set LLM_API_KEY in .env and restart the backend to enable AI analysis.",
         )
-    if kind in ("index", "analyze"):
+    if kind in ("index", "analyze", "refine"):
         count = db.scalar(
             select(func.count())
             .select_from(Paper)
@@ -447,6 +450,8 @@ def run(pid: str, kind: str, user=Depends(current_user), db=Depends(db_session))
         )
         if count > 20:
             raise HTTPException(422, "Select at most 20 papers per research run.")
+        if count == 0:
+            raise HTTPException(422, "Select at least one paper first.")
     job = Job(project_id=pid, kind=kind)
     db.add(job)
     try:
@@ -611,6 +616,8 @@ def chat(pid: str, body: Question, user=Depends(current_user), db=Depends(db_ses
                 )
                 or "The selected evidence does not support an answer to this question."
             )
+        except ValueError as exc:
+            raise HTTPException(502, str(exc)) from None
         except Exception:
             raise HTTPException(
                 502,
@@ -675,6 +682,6 @@ if Path("dist").exists():
     def frontend(path: str):
         if path.startswith("api/"):
             raise HTTPException(404, "Endpoint not found")
-        if path in ("favicon.svg", "research-world.png"):
+        if path in ("favicon.svg", "research-world.png", "research-night.jpg"):
             return FileResponse("dist/" + path)
         return FileResponse("dist/index.html")

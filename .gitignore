@@ -18,6 +18,5 @@ tests/fixture.pdf
 docs/reference/*.png
 docs/reference/*.html
 
-# Local documentation and tests
-docs/
-tests/
+# Personal reference material stays local; application docs and tests are versioned.
+docs/reference/
