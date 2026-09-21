@@ -17,4 +17,4 @@ COPY --from=frontend /app/dist ./dist
 RUN useradd --create-home researchos && mkdir /app/data && chown researchos:researchos /app/data
 USER researchos
 EXPOSE 8000
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
