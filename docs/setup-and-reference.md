@@ -53,7 +53,6 @@ Without an AI key, the pipeline still discovers and reads papers, then returns c
 - `backend/main.py`: authenticated API, session cookies, durable job dispatch, worker, upload/download and reports.
 - `backend/research.py`: LangGraph steps, arXiv search, PDF ingestion, retrieval, provider adapters, evidence validation.
 - `backend/db.py`: SQLAlchemy schema. SQLite for zero-service local development; PostgreSQL with native pgvector storage/distance queries supported through DATABASE_URL. Redis optionally caches academic searches for one hour; cache failure never blocks research.
-- `tests/`: backend regression and browser workflow tests.
 
 Research steps are durable database jobs. A single worker executes them outside HTTP requests. Completed events are polled by the UI; interrupted jobs are marked failed on restart and can be retried. Run **one API process** with this MVP worker; multiple workers require a separate queue/lease architecture. The initial run proceeds automatically. Afterwards, edit queries to discover more papers, adjust the source selection, and choose **Analyze selected papers** to rebuild without overwriting your selection.
 
@@ -66,17 +65,6 @@ docker compose up --build
 ```
 
 The app runs at http://localhost:8000. Database and PDFs use named volumes. PostgreSQL and Redis are internal services. The sample database password is for local development; replace it before hosting. Set COOKIE_SECURE=true behind HTTPS and explicitly configure ALLOWED_ORIGINS for the deployment origin. Do not expose this development configuration directly to the internet.
-
-## Tests
-
-```powershell
-.\.venv\Scripts\python -m pytest -q
-.\.venv\Scripts\python tests\pdf_fixture.py
-npx playwright install chromium
-# Builds the frontend and starts an isolated test server on port 8766
-npm run test:e2e
-npm run build
-```
 
 The lockfile records the verified dependency versions; requirements.txt records the intended version ranges.
 
@@ -94,10 +82,6 @@ EMBEDDINGS_ENABLED=false
 Restart the API after changes. Free-only mode rejects paid model IDs and disables all embedding API calls. Retrieval uses local keyword matching. OpenRouter's free router chooses an available model compatible with JSON output; quality, latency, and quotas vary. Rate limits produce a retryable error and never trigger a paid fallback.
 
 The **Compare** tab arranges cited findings by method, dataset, results, and limitations; missing evidence is labeled explicitly. After reviewing a finding, choose **Generate report** to refresh the downloadable Markdown. Sources supports additional PDF uploads and selection of up to 20 papers. Research deletion requires confirmation.
-
-Browser tests launch their own server and use disposable storage, leaving local research and provider settings untouched. AI behavior in automated tests is stubbed or disabled; live-provider checks must be run separately.
-
-Backend tests use an isolated temporary database and include authorization, valid/invalid PDFs, section/page extraction, retrieval, unanswerable questions, forged citations, jobs, report references, selection invalidation, and deletion. AI-dependent tests use a deterministic provider stub; they do not establish real-model accuracy. Browser tests create a temporary QA account, exercise actual API calls and PDF upload, inspect source evidence, and check mobile overflow.
 
 ## Practical limits
 

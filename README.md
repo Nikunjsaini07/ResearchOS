@@ -23,13 +23,12 @@ Read these files in order. You do not need to understand every file at once.
 src/          Browser code: application, API helper, types, and styles
 backend/      Python API, research pipeline, database, and optional cache
 public/       Images and favicon actually used by the app
-tests/        Backend checks and browser workflow tests
 docs/         Detailed setup and reference material
 ```
 
 `src/styles.css` controls the appearance. `backend/cache.py` is an optional Redis
-helper; skip it on your first read. The root configuration files support builds,
-tests, and Docker. Keep them, but you do not need to study them first.
+helper; skip it on your first read. The root configuration files support builds
+and Docker.
 
 ## Run locally (Windows)
 
@@ -45,8 +44,8 @@ In a second terminal, start the frontend:
 npm.cmd run dev
 ```
 
-Open http://127.0.0.1:5173. For a fresh installation, provider settings, Docker,
-and test commands, see [Setup and reference](docs/setup-and-reference.md).
+Open http://127.0.0.1:5173. For a fresh installation and provider settings, see
+[Setup and reference](docs/setup-and-reference.md).
 
 ## Follow one question through the code
 

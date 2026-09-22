@@ -3,20 +3,14 @@ node_modules/
 dist/
 .venv/
 __pycache__/
-.pytest_cache/
 .env
 data/
 *.pyc
-test-results/
-playwright-report/
-
-# Generated build metadata and PDF test fixture
 *.tsbuildinfo
-tests/fixture.pdf
 
 # Local design references (not application assets)
 docs/reference/*.png
 docs/reference/*.html
 
-# Personal reference material stays local; application docs and tests are versioned.
+# Personal reference material stays local.
 docs/reference/
