@@ -42,6 +42,7 @@ from backend.research import (
     chunk_pdf,
 )
 import json
+from backend.storage import save_pdf, read_pdf, delete_pdf
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("researchos")
@@ -95,6 +96,11 @@ async def lifespan(app):
         with engine.begin() as connection:
             connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
     Base.metadata.create_all(engine)
+    if engine.dialect.name == "postgresql":
+        # API authorization stays in FastAPI; block direct access through Supabase's Data API.
+        with engine.begin() as connection:
+            for table in Base.metadata.sorted_tables:
+                connection.execute(text(f'ALTER TABLE "{table.name}" ENABLE ROW LEVEL SECURITY'))
     with Session() as db:
         for j in db.scalars(select(Job).where(Job.status == "running")):
             j.status = "failed"
@@ -410,7 +416,7 @@ def delete_project(pid: str, user=Depends(current_user), db=Depends(db_session))
     for paper in papers:
         db.execute(delete(Chunk).where(Chunk.paper_id == paper.id))
         if paper.file:
-            Path(paper.file).unlink(missing_ok=True)
+            delete_pdf(paper.file)
     for model in (Message, Job, Paper):
         db.execute(delete(model).where(model.project_id == pid))
     db.delete(p)
@@ -535,9 +541,7 @@ async def upload(
     )
     db.add(p)
     db.flush()
-    path = DATA / f"{p.id}.pdf"
-    path.write_bytes(raw)
-    p.file = str(path)
+    p.file = await __import__("asyncio").to_thread(save_pdf, p.id, raw)
     for chunk in chunks:
         db.add(Chunk(paper_id=p.id, **chunk))
     project.analysis = {}
@@ -553,8 +557,8 @@ def pdf(pid: str, paper_id: str, user=Depends(current_user), db=Depends(db_sessi
     p = db.get(Paper, paper_id)
     if not p or p.project_id != pid or not p.file:
         raise HTTPException(404, "PDF is not available.")
-    return FileResponse(
-        p.file, media_type="application/pdf", headers={"Content-Disposition": "inline"}
+    return Response(
+        read_pdf(p.file), media_type="application/pdf", headers={"Content-Disposition": "inline"}
     )
 
 

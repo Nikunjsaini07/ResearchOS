@@ -1,5 +1,6 @@
 import json
 import logging
+from backend.storage import save_pdf, read_pdf
 import math
 import os
 import re
@@ -327,12 +328,12 @@ def ingest_node(state):
                         db.rollback(); event(state['job_id'],'Embedding provider unavailable; keyword retrieval remains available.',20)
                 good+=1; continue
             try:
-                raw=Path(p.file).read_bytes() if p.file else download_pdf(p.pdf_url)
+                raw=read_pdf(p.file) if p.file else download_pdf(p.pdf_url)
                 chunks=chunk_pdf(raw); vectors=[[] for _ in chunks]
                 if embeddings_enabled() and (configured() or os.getenv('EMBEDDING_API_KEY')):
                     try: vectors=embed([c['text'] for c in chunks])
                     except Exception: event(state['job_id'],'Embedding provider unavailable; keyword retrieval remains available.',int(index/max(1,len(papers))*80))
-                path=DATA/f'{p.id}.pdf'; path.write_bytes(raw); p.file=str(path)
+                p.file=save_pdf(p.id, raw)
                 db.execute(delete(Chunk).where(Chunk.paper_id==p.id))
                 for c,v in zip(chunks,vectors): db.add(Chunk(paper_id=p.id,embedding=v or None,**c))
                 p.status='indexed'; p.error=''; good+=1; db.commit()

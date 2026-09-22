@@ -13,6 +13,8 @@ load_dotenv()
 DATA = Path(os.getenv("DATA_DIR", "./data"))
 DATA.mkdir(parents=True, exist_ok=True)
 url = os.getenv("DATABASE_URL", "sqlite:///./data/researchos.db")
+if url.startswith(("postgres://", "postgresql://")):
+    url = "postgresql+psycopg://" + url.split("://", 1)[1]
 engine = create_engine(
     url,
     connect_args=(
