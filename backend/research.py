@@ -1,4 +1,5 @@
 import json
+import logging
 import math
 import os
 import re
@@ -17,6 +18,7 @@ from typing import TypedDict
 from backend import cache
 from backend.db import Session, Project, Paper, Chunk, Job, DATA, now
 
+log = logging.getLogger("researchos.research")
 STOP = set('the a an of in to and or for with on is are this that how what does do can by from as at it using compare compares compared versus vs affect current'.split())
 def tokens(text): return [x for x in re.findall(r'[a-z0-9]+', text.lower()) if x not in STOP and len(x)>1]
 
@@ -34,7 +36,7 @@ def request(method, url, **kwargs):
     attempts = kwargs.pop('_attempts', 3)
     for attempt in range(attempts):
         try:
-            with httpx.Client(timeout=45, follow_redirects=False) as client:
+            with httpx.Client(timeout=45, follow_redirects=True) as client:
                 r = client.request(method, url, **kwargs)
                 r.raise_for_status()
                 return r
@@ -206,8 +208,21 @@ def search_arxiv(query, limit=12):
     terms=tokens(query)[:12]
     expression=' AND '.join(f'all:{term}' for term in terms[:5])
     if not expression: return []
-    response=request('GET','https://export.arxiv.org/api/query',params={'search_query':expression,'start':0,'max_results':limit,'sortBy':'relevance'},headers={'User-Agent':'ResearchOS/0.1 academic research workspace'})
-    ns={'a':'http://www.w3.org/2005/Atom'}; root=ET.fromstring(response.text); found=[]
+    params={'search_query':expression,'start':0,'max_results':limit,'sortBy':'relevance'}
+    headers={'User-Agent':'ResearchOS/0.1 academic research workspace','Accept':'application/atom+xml'}
+    root=None
+    last_error=None
+    for endpoint in ('https://export.arxiv.org/api/query','https://arxiv.org/api/query'):
+        try:
+            response=request('GET',endpoint,params=params,headers=headers)
+            root=ET.fromstring(response.text)
+            break
+        except Exception as exc:
+            last_error=exc
+            log.warning('arXiv search endpoint failed host=%s error=%s',endpoint,type(exc).__name__)
+    if root is None:
+        raise ValueError('Academic search is temporarily unavailable.') from last_error
+    ns={'a':'http://www.w3.org/2005/Atom'}; found=[]
     for entry in root.findall('a:entry',ns):
         url=entry.findtext('a:id','',ns).replace('http:','https:')
         if '/abs/' not in url: continue
