@@ -104,7 +104,7 @@ button svg {
   position: fixed;
   inset: 0;
   z-index: -2;
-  background: url("/research-day-painted.png?v=daylight-1") center center/cover no-repeat;
+  background: url("/research-day-painted.webp") center center/cover no-repeat;
 }
 .world:after {
   content: "";
@@ -2494,7 +2494,7 @@ textarea:focus-visible,
 }
 @media (max-width: 600px) {
   .world {
-    background-image: url("/research-day-mobile.png?v=daylight-1");
+    background-image: url("/research-day-mobile.webp");
     background-position: center center;
   }
   .home-description {

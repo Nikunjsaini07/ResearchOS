@@ -11,3 +11,4 @@ playwright-report
 .env
 *.db
 docs/reference
+artwork/source

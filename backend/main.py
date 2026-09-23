@@ -699,5 +699,7 @@ if dist_dir.exists():
             raise HTTPException(404, "Endpoint not found")
         asset = (dist_dir / path).resolve()
         if asset.is_relative_to(dist_dir) and asset.is_file():
-            return FileResponse(asset)
+            return FileResponse(
+                asset, media_type="image/webp" if asset.suffix.lower() == ".webp" else None
+            )
         return FileResponse(dist_dir / "index.html")
