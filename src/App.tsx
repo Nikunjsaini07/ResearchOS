@@ -684,8 +684,8 @@ export default function App() {
                           <span className="eyebrow">HERE’S WHAT WE FOUND</span>
                           <h2>
                             {project.analysis.mode === "extractive"
-                              ? "Straight from the source."
-                              : "A little more clarity."}
+                              ? "Evidence from your papers"
+                              : "An answer to your question"}
                           </h2>
                         </div>
                       </div>
@@ -699,35 +699,28 @@ export default function App() {
                           </p>
                         </div>
                       )}
-                      {project.analysis.papers.map((p, i) => (
-                        <section className="finding-group" key={p.paper_id}>
-                          <div className="finding-title">
-                            <span>{String(i + 1).padStart(2, "0")}</span>
-                            <h3>{p.title}</h3>
-                          </div>
-                          {p.claims
-                            .filter((c) => c.status !== "unsupported")
-                            .slice(0, project.analysis.mode === "extractive" ? 2 : undefined)
-                            .map((c, j) => (
-                              <div className="finding" key={j}>
-                                {project.analysis.mode !== "extractive" && (
-                                  <span className="finding-dimension">
-                                    {c.dimension}
-                                  </span>
-                                )}
-                                <p>
-                                  {project.analysis.mode === "extractive" && c.text.length > 700
-                                    ? c.text.slice(0, 700).trimEnd().replace(/[.,;:]$/, "") + "…"
-                                    : c.text}
-                                  {citations(c)}
-                                </p>
-                              </div>
-                            ))}
-                          {project.analysis.mode === "extractive" && p.claims.filter((c) => c.status !== "unsupported").length > 2 && (
-                            <p className="source-limit-note">Showing the two most relevant passages. Open Sources to inspect the full paper set.</p>
-                          )}
-                        </section>
-                      ))}
+                      <section className="answer-section">
+                        <h3>Direct answer</h3>
+                        {project.analysis.overview?.some((c) => c.status !== "unsupported") ? (
+                          project.analysis.overview.filter((c) => c.status !== "unsupported").map((c, i) => (
+                            <p className="answer-summary" key={i}>{c.text}{citations(c)}</p>
+                          ))
+                        ) : (
+                          <p className="answer-summary answer-unavailable">The available passages do not support a verified summary yet. The source evidence is below.</p>
+                        )}
+                      </section>
+                      <section className="answer-section">
+                        <h3>{project.analysis.mode === "extractive" ? "Relevant source passages" : "Key findings"}</h3>
+                        {(project.analysis.findings ?? project.analysis.papers.flatMap((p) => p.claims))
+                          .filter((c) => c.status !== "unsupported")
+                          .map((c, i) => {
+                            const sourceTitle = project.analysis.evidence?.find((e) => e.id === c.sources[0]?.id)?.title;
+                            return <div className="finding" key={i}>
+                              <span className="finding-dimension">{c.dimension}{sourceTitle ? " · " + sourceTitle : ""}</span>
+                              <p>{c.text}{citations(c)}</p>
+                            </div>;
+                          })}
+                      </section>
                       <div className="answer-end">
                         <Check size={15} />
                         Sources are linked. Interpretations are yours to review.

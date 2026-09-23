@@ -2047,6 +2047,35 @@ button svg {
     scroll-behavior: auto !important;
   }
 }
+.answer-section + .answer-section {
+  border-top: 1px solid var(--line);
+  margin-top: 26px;
+  padding-top: 25px;
+}
+.answer-section h3 {
+  color: var(--ink);
+  font-size: 14px;
+  letter-spacing: -0.2px;
+  margin-bottom: 14px;
+}
+.answer-summary {
+  color: var(--text-soft);
+  font-size: 15px;
+  line-height: 1.8;
+  margin-bottom: 12px;
+}
+.answer-unavailable {
+  color: var(--muted);
+  font-size: 13px;
+}
+.answer-section .finding {
+  padding: 0 0 14px;
+  border-bottom: 1px solid var(--line);
+}
+.answer-section .finding:last-child {
+  border-bottom: 0;
+}
+
 @media print {
   .world,
   .site-header,

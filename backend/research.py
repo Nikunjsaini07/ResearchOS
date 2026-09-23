@@ -305,14 +305,6 @@ def plan_node(state):
         if has_upload:
             # A supplied corpus does not need discovery or an AI-generated search plan.
             plan={'queries':[],'scope':p.question,'dimensions':['Method','Dataset','Results','Limitations'],'mode':'upload'}
-        elif configured():
-            try:
-                plan=llm('Plan an academic search. Return {"queries":[up to 3 focused short keyword queries],"scope":"one sentence","dimensions":[comparison dimensions]}.',p.question)
-                queries=plan.get('queries',[])
-                if not isinstance(queries,list) or not queries or any(not isinstance(q,str) for q in queries): raise ValueError('Provider returned an invalid research plan.')
-                plan['queries']=[q[:300] for q in queries[:3]]
-            except ValueError:
-                plan=None
         else:
             plan=None
         if plan is None:
@@ -389,52 +381,77 @@ def ingest_node(state):
 
 def analysis_node(state):
     with Session() as db:
-        p=db.get(Project,state['project_id'])
-        papers=list(db.scalars(select(Paper).where(Paper.project_id==p.id,Paper.selected==True,Paper.status=='indexed')))
+        project=db.get(Project,state['project_id'])
+        papers=list(db.scalars(select(Paper).where(Paper.project_id==project.id,Paper.selected==True,Paper.status=='indexed')))
         if not papers: raise ValueError('Index selected PDFs before running analysis.')
-        evidence=[]; analyses=[]; fallback_note=''
+        evidence=[]; passage_by_paper={}
+        question_terms=set(tokens(project.question))
         for index,paper in enumerate(papers):
-            event(state['job_id'],f'Analyzing paper {index+1}/{len(papers)}',10+int(index/max(1,len(papers))*65))
+            event(state['job_id'],f'Selecting relevant passages from paper {index+1}/{len(papers)}',10+int(index/max(1,len(papers))*55))
             chunks=list(db.scalars(select(Chunk).where(Chunk.paper_id==paper.id)))
-            # Include beginning, methods, results and limitations within a bounded context.
-            ranked=sorted(chunks,key=lambda c: (bool(re.search('method|result|limitation|conclu',c.section,re.I)),len(set(tokens(c.text))&set(tokens(p.question)))),reverse=True)[:10]
-            refs=[evidence_dict(c,paper) for c in ranked]; evidence.extend(refs)
-            # Free models are much more reliable with a bounded per-paper context.
-            llm_refs=[{**ref,'text':ref['text'][:1400]} for ref in refs[:8]]
-            if fallback_note:
-                claims=[{'text':display_excerpt(c.text),'dimension':c.section,'sources':[{'id':c.id,'quote':c.text}],'status':'source_excerpt'} for c in ranked[:2]]
-            else:
-                try:
-                    event(state['job_id'],f'Asking the AI for cited findings from paper {index+1}/{len(papers)}',12+int(index/max(1,len(papers))*65))
-                    result=llm('Extract evidence for this research question. Return {"claims":[{"text":"specific factual claim","dimension":"Method|Dataset|Results|Limitations","sources":[{"id":"provided chunk ID","quote":"exact verbatim supporting passage, at least 20 characters"}]}]}. Up to 8 claims. Only supplied text. Omit unreported details. No causal comparisons across different benchmarks.',json.dumps({'question':p.question,'evidence':llm_refs}))
-                    claims=validate_claims(result.get('claims',[]),refs)
-                except ValueError as exc:
-                    # Preserve a useful, cited result when the free provider is slow,
-                    # rate-limited, or returns a format we cannot validate.
-                    fallback_note='The free AI step was unavailable, so these findings use original source passages.'
-                    claims=[{'text':display_excerpt(c.text),'dimension':c.section,'sources':[{'id':c.id,'quote':c.text}],'status':'source_excerpt'} for c in ranked[:2]]
-            analyses.append({'paper_id':paper.id,'title':paper.title,'claims':claims})
-        all_claims=[c for a in analyses for c in a['claims']]
-        if not all_claims:
-            fallback_note='The free model did not return cited findings, so this answer uses original source passages.'
-            for paper_analysis in analyses:
-                paper_refs=[e for e in evidence if e['paper_id']==paper_analysis['paper_id']][:3]
-                paper_analysis['claims']=[{'text':display_excerpt(e['text']),'dimension':e['section'],'sources':[{'id':e['id'],'quote':e['text']}],'status':'source_excerpt'} for e in paper_refs[:2]]
-        event(state['job_id'],'Comparing limitations and identifying potential gaps',85)
-        if fallback_note:
-            gaps=[]
-        else:
+            ranked=sorted(chunks,key=lambda c: (
+                len(question_terms & set(tokens(c.text))),
+                bool(re.search('abstract|method|result|limitation|conclu',c.section,re.I)),
+                -c.page,
+            ),reverse=True)
+            chosen=ranked[:2]
+            for section in ('result|finding|outcome', 'limitation|discussion|conclu'):
+                match=next((c for c in ranked if c not in chosen and re.search(section,c.section,re.I)),None)
+                if match: chosen.append(match)
+            for chunk in ranked:
+                if len(chosen)>=4: break
+                if chunk not in chosen: chosen.append(chunk)
+            refs=[evidence_dict(c,paper) for c in chosen[:4]]
+            passage_by_paper[paper.id]=refs
+            evidence.extend(refs)
+        if not evidence: raise ValueError('No readable passages were found in the selected PDFs.')
+
+        overview=[]; findings=[]; gaps=[]; fallback_note=''
+        if configured():
             try:
-                event(state['job_id'],'Asking the AI to identify possible gaps',86)
-                result=llm('Identify up to 4 potential research gaps limited to this corpus. Never claim global novelty. Return {"claims":[{"text":"Potential gap and why it follows from the evidence","dimension":"Potential gap","sources":[{"id":"chunk ID","quote":"exact supporting quote of at least 20 characters"}]}]}. These are hypotheses for human review.',json.dumps({'question':p.question,'analyses':analyses,'evidence':evidence})[:60000])
-                gaps=validate_claims(result.get('claims',[]),evidence)
+                event(state['job_id'],'Writing one evidence-backed answer across the selected papers',72)
+                excerpts=[{'id':e['id'],'paper_id':e['paper_id'],'title':e['title'],
+                           'page':e['page'],'section':e['section'],'text':e['text'][:900]} for e in evidence]
+                result=llm(
+                    'Answer the research question using only the supplied PDF passages. '
+                    'Return JSON with overview (1-2 direct-answer claims), findings (up to 8 specific claims), '
+                    'and gaps (up to 3 cautious hypotheses limited to this corpus). '
+                    'Each claim must be {"text":"one clear sentence","dimension":"Method|Dataset|Results|Limitations|Finding|Potential gap",'
+                    '"sources":[{"id":"passage ID","quote":"an exact verbatim excerpt of at least 20 characters from that passage"}]}. '
+                    'Cite every claim. Compare papers only when both are cited and their methods and measurements are comparable. '
+                    'If the evidence does not answer the question, say that in a cited overview claim; do not invent an answer or a gap.',
+                    json.dumps({'question':project.question,'passages':excerpts},ensure_ascii=False),
+                )
+                overview=validate_claims(result.get('overview',[]),evidence)[:2]
+                findings=validate_claims(result.get('findings',[]),evidence)[:8]
+                gaps=validate_claims(result.get('gaps',[]),evidence)[:3]
+                if not overview or not findings:
+                    fallback_note='The AI answer did not contain enough verifiable citations. Showing source evidence instead.'
             except ValueError as exc:
-                fallback_note='The free AI step was unavailable, so potential gaps were not generated.'
-                gaps=[]
-        note='Source quotations are validated. Claims and potential gaps require human review; analysis uses a bounded selection of passages.'
-        if fallback_note: note += ' ' + fallback_note
-        p.analysis={'papers':analyses,'gaps':gaps,'evidence':evidence,'created':now(),'mode':'extractive' if fallback_note else 'synthesized','note':note}; p.status='analyzed'; p.report=''; db.commit()
-        event(state['job_id'],f'{len(all_claims)} sourced findings and {len(gaps)} potential gaps ready for review.',100)
+                log.warning('Answer synthesis unavailable error=%s',exc)
+                fallback_note='AI synthesis was unavailable. Showing source evidence instead of an unsupported answer.'
+        else:
+            fallback_note='AI synthesis is not configured. Showing source evidence instead of an unsupported answer.'
+
+        if fallback_note:
+            overview=[]; findings=[]; gaps=[]
+            for paper in papers:
+                for passage in passage_by_paper[paper.id][:1]:
+                    findings.append({'text':display_excerpt(passage['text'],320),
+                                     'dimension':passage['section'],'sources':[{'id':passage['id'],'quote':passage['text']}],
+                                     'status':'source_excerpt'})
+
+        lookup={e['id']:e for e in evidence}
+        analyses=[]
+        for paper in papers:
+            claims=[c for c in findings if {lookup[s['id']]['paper_id'] for s in c['sources']}=={paper.id}]
+            analyses.append({'paper_id':paper.id,'title':paper.title,'claims':claims})
+        note='Every displayed claim links to a matching PDF passage. Interpretations and possible gaps require human review.'
+        if fallback_note: note += ' '+fallback_note
+        project.analysis={'overview':overview,'findings':findings,'papers':analyses,'gaps':gaps,
+                          'evidence':evidence,'created':now(),'mode':'extractive' if fallback_note else 'synthesized','note':note}
+        project.status='analyzed'; project.report=''; db.commit()
+        event(state['job_id'],f'{len(findings)} cited findings and {len(gaps)} possible gaps ready for review.',100)
     return state
 
 def report_node(state):
@@ -449,12 +466,18 @@ def report_node(state):
                 if key not in refs: refs[key]=len(refs)+1
                 ids.append(f'[{refs[key]}]')
             return claim['text']+' '+' '.join(ids)
-        lines=[f'# {p.title}',f'## Research question\n{p.question}',*(['> Source excerpts only. The AI synthesis step was unavailable; these are original passages, not an AI-authored answer.'] if a.get('mode')=='extractive' else []),'## Search methodology',f"Search queries: {'; '.join(p.plan.get('queries',[])) or 'User-uploaded corpus'}. Sources: arXiv and user uploads. Findings are limited to the selected papers and sampled passages.",'## Findings and method comparison']
-        for paper in a['papers']:
-            lines.append(f"### {paper['title']}")
-            for claim in paper['claims']:
-                if claim['status']=='unsupported': continue
+        lines=[f'# {p.title}',f'## Research question\n{p.question}','## Direct answer']
+        supported_overview=[claim for claim in a.get('overview',[]) if claim['status']!='unsupported']
+        if supported_overview:
+            lines.extend('- '+cite(claim) for claim in supported_overview)
+        else:
+            lines.append('The selected passages did not support a verified synthesized answer. The evidence below is source text, not an AI-authored conclusion.')
+        lines.extend(['## Key findings',a.get('note','')])
+        findings=a.get('findings') or [claim for paper in a['papers'] for claim in paper['claims']]
+        for claim in findings:
+            if claim['status']!='unsupported':
                 lines.append(f"- **{claim['dimension']}:** {cite(claim)} *(Review: {claim['status'].replace('_',' ')})*")
+        lines.extend(['## Search methodology',f"Search queries: {'; '.join(p.plan.get('queries',[])) or 'User-uploaded corpus'}. Sources: arXiv and user uploads. Findings are limited to the selected papers and sampled passages."])
         lines.append('## Potential research gaps')
         for gap in a.get('gaps',[]):
             if gap['status']!='unsupported': lines.append('- '+cite(gap)+f" *(Review: {gap['status'].replace('_',' ')})*")
@@ -500,22 +523,7 @@ def auto_index(state):
 
 def auto_analyze(state):
     phase(state,'analyze','Connecting the evidence',65)
-    if configured(): return analysis_node(state)
-    # An honest, useful no-key result: exact excerpts, never simulated AI synthesis.
-    with Session() as db:
-        project=db.get(Project,state['project_id'])
-        papers=list(db.scalars(select(Paper).where(Paper.project_id==project.id,Paper.selected==True,Paper.status=='indexed')))
-        analyses=[]; evidence=[]
-        for paper in papers:
-            chunks=list(db.scalars(select(Chunk).where(Chunk.paper_id==paper.id)))
-            ranked=sorted(chunks,key=lambda c:len(set(tokens(c.text))&set(tokens(project.question))),reverse=True)[:3]
-            refs=[evidence_dict(c,paper) for c in ranked]; evidence.extend(refs)
-            claims=[{'text':display_excerpt(c.text),'dimension':c.section,'sources':[{'id':c.id,'quote':c.text}],'status':'source_excerpt'} for c in ranked[:2]]
-            analyses.append({'paper_id':paper.id,'title':paper.title,'claims':claims})
-        project.analysis={'papers':analyses,'gaps':[],'evidence':evidence,'created':now(),'mode':'extractive','note':'Source excerpts only. Connect an AI provider for synthesized answers and cross-paper analysis.'}
-        project.status='analyzed';db.commit()
-    event(state['job_id'],'Relevant source passages collected. AI synthesis is not configured.',100)
-    return state
+    return analysis_node(state)
 
 def auto_report(state):
     phase(state,'report','Putting your research together',90)

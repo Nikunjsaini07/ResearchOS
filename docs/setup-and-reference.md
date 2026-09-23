@@ -44,7 +44,7 @@ The UI has two main screens: an illustrated question composer and a live researc
 6. Use Sources, Research gaps, and follow-up chat within the same page. Download the report from the header icon.
 7. Continue from the same research page; the current browser session keeps the workspace available.
 
-Without an AI key, the pipeline still discovers and reads papers, then returns clearly labeled verbatim source excerpts. It does not simulate AI synthesis or fabricate research gaps. Add LLM_API_KEY and restart the backend for live synthesis.
+The automatic research run uses deterministic search terms and one chat-completion request to synthesize a direct answer, findings, and possible gaps across the selected papers. Embeddings, when enabled, make separate batched requests. Each displayed claim must cite a matching PDF passage. Without an AI key, or when the response cannot be verified, the answer clearly labels short source passages and does not fabricate a synthesis or research gaps.
 
 ## Architecture
 

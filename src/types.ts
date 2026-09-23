@@ -26,6 +26,8 @@ export type Project = {
   analysis: {
     mode?: string;
     note?: string;
+    overview?: Claim[];
+    findings?: Claim[];
     papers?: { paper_id: string; title: string; claims: Claim[] }[];
     gaps?: Claim[];
     evidence?: Evidence[];
