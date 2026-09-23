@@ -1,12 +1,16 @@
 :root {
   font-family: Inter, sans-serif;
   color: #17363d;
-  background: #edf8fc;
+  color-scheme: light;
+  background: #f4f7f3;
   font-synthesis: none;
   --ink: #17363d;
-  --muted: #46646a;
-  --accent: #2d7969;
-  --line: #e4edeb;
+  --muted: #486269;
+  --accent: #547a68;
+  --line: #d5e1dc;
+  --surface: #fffefb;
+  --surface-soft: #eaf2ef;
+  --text-soft: #334d53;
 }
 * {
   box-sizing: border-box;
@@ -100,14 +104,13 @@ button svg {
   position: fixed;
   inset: 0;
   z-index: -2;
-  background: url("/research-world.png?v=observatory") center center/cover
-    no-repeat;
+  background: url("/research-day-painted.png") center center/cover no-repeat;
 }
 .world:after {
   content: "";
   position: absolute;
   inset: 0;
-  background: rgba(239, 248, 250, 0.46);
+  background: linear-gradient(180deg, rgba(244, 247, 243, 0.42), rgba(244, 247, 243, 0.68));
 }
 .site-header {
   height: 96px;
@@ -380,7 +383,7 @@ button svg {
   color: #315d50;
 }
 .research-view .world:after {
-  background: rgba(240, 248, 244, 0.62);
+  background: rgba(244, 247, 243, 0.78);
 }
 .research-shell {
   max-width: 1250px;
@@ -2127,11 +2130,6 @@ button svg {
   }
 }
 
-/* Slightly soften the landscape brightness without dimming the interface. */
-.world {
-  filter: brightness(0.85);
-}
-
 .workspace-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 20px 24px; border-bottom: 1px solid var(--line); }
 .workspace-tools p { flex: 1 1 240px; font-size: 13px; line-height: 1.7; color: var(--muted); }
 .sources-list .workspace-tools { padding: 0 0 24px; margin-bottom: 12px; }
@@ -2168,139 +2166,86 @@ input:focus-visible, textarea:focus-visible, .comparison-scroll:focus-visible { 
   .workspace-tools { padding: 16px; }
 }
 
-/* Night field theme: deep blue surfaces, warm moonlight text, one living green accent. */
-:root {
-  color-scheme: dark;
-  color: #edf7f5;
-  background: #071823;
-  --ink: #edf7f5;
-  --muted: #a9c1bd;
-  --accent: #7bd0b0;
-  --line: #2c4b58;
-  --surface: #0d2431;
-  --surface-raised: #112d3a;
-  --surface-soft: #163542;
-  --text-soft: #c9dcda;
-}
-
-body,
-.app {
-  background: #071823;
+/* Daylight field: ink on quiet paper, with the landscape left visible behind it. */
+body {
+  background: #f4f7f3;
   color: var(--ink);
 }
-
-.world {
-  background: url("/research-night.jpg?v=night") center center/cover no-repeat;
-  filter: brightness(0.72) saturate(0.9);
-}
-
-.world:after,
-.research-view .world:after {
-  background: rgba(3, 14, 23, 0.64);
-}
-
-.site-header,
-.home,
-.research-shell {
-  color: var(--ink);
-}
-
 .brand,
 .brand > span:not(.brand-icon),
 .home h1,
 .home h1 > span,
 .research-title h1,
 .answer-intro h2,
-.modal > header > h2,
-.modal h2,
-.settings-intro h3,
-.setting-heading h3,
-.account-form label,
-.finding-title h3,
-.source-card h3,
+.field-note h3,
+.working h2,
 .empty-state h2,
-.empty-state h3,
-.working h2 {
-  color: var(--ink) !important;
+.source-card h3,
+.finding-title h3,
+.modal h2,
+.history-list strong,
+.setting-heading h3,
+.evidence-modal h2 {
+  color: var(--ink);
   text-shadow: none;
 }
-
 .brand-icon,
 .header-settings,
 .nav-button,
 .welcome-tag,
 .suggestions > button,
 .home-footnote,
-.run-badge,
-.journey,
-.answer-panel,
-.field-note,
-.search-notes,
-.modal,
-.composer,
-.followup,
-.recovery,
-.error,
-.review-box,
-.source-card,
-.setting-block pre,
-.account-form input,
-.evidence-modal blockquote {
-  background: var(--surface) !important;
-  border-color: var(--line) !important;
-  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.16);
+.run-badge {
+  background: rgba(255, 254, 251, 0.88);
+  border: 1px solid rgba(213, 225, 220, 0.9);
+  box-shadow: 0 3px 14px rgba(23, 54, 61, 0.05);
+  color: var(--ink);
 }
-
-.brand-icon {
-  color: var(--accent) !important;
-  border-color: #3b626b !important;
+.brand-icon,
+.little-star,
+.field-note-icon,
+.aside-art,
+.answer-spark,
+.download-link,
+.gap-leaf,
+.source-index {
+  color: var(--accent);
 }
-
 .brand > i,
 .pulse-dot {
-  background: var(--accent) !important;
+  background: var(--accent);
 }
-
-.nav-button,
+.nav-button:hover,
+.suggestions > button:hover {
+  background: #fffefb;
+  border-color: #b7d3d2;
+}
 .icon-button,
 .back-button,
-.header-settings,
-.welcome-tag,
-.home-description,
-.home-footnote,
+.quiet-button,
 .attach-button,
 .research-mode,
 .suggestions > span,
-.suggestions > button,
-.quiet-button,
+.home-description,
 .journey-heading,
 .journey-heading > button,
-.back-button,
 .progress-caption,
 .activity-log > div,
 .activity-log span,
 .eyebrow,
-.research-title .eyebrow,
-.field-note > .eyebrow,
-.field-note p,
-.field-note > span:last-child,
 .search-notes,
-.search-notes .eyebrow,
 .search-notes > div,
-.empty-state,
 .empty-state p,
 .working > p,
 .working-note,
 .source-card p,
 .paper-meta,
-.paper-meta > span,
-.gaps-list > article p,
 .gap-note,
 .message > span,
 .message p,
-.message.user p,
 .research-footer,
 .modal-description,
+.history-list small,
 .settings-intro p,
 .setting-block p,
 .setting-block small,
@@ -2309,93 +2254,64 @@ body,
 .source-limit-note,
 .comparison-note,
 .not-reported {
-  color: var(--muted) !important;
+  color: var(--muted);
 }
-
-.home h1 > span,
-.little-star,
-.field-note-icon,
-.aside-art,
-.answer-spark,
-.citations > button,
-.download-link,
-.source-links > a,
-.gap-leaf,
-.message-sources > button,
-.source-location > span,
-.finding-dimension,
-.answer-end,
-.source-index {
-  color: var(--accent) !important;
+.home-description {
+  font-size: 15px;
+  text-shadow: none;
 }
-
-.home-description,
-.home h1,
-.welcome-tag,
-.home-footnote {
-  text-shadow: 0 1px 18px rgba(0, 0, 0, 0.55);
+.home h1 {
+  text-shadow: none;
 }
-
+.composer,
+.journey,
+.answer-panel,
+.field-note,
+.search-notes,
+.modal,
+.followup {
+  background: var(--surface);
+  border-color: var(--line);
+  box-shadow: 0 14px 34px rgba(23, 54, 61, 0.07);
+}
 .composer {
-  border: 1px solid #426572 !important;
-  border-radius: 21px;
+  border-width: 1px;
 }
-
 .composer:hover,
 .composer:focus-within,
 .followup:focus-within {
-  border-color: var(--accent) !important;
-  box-shadow: 0 0 0 3px rgba(123, 208, 176, 0.16), 0 12px 35px rgba(0, 0, 0, 0.18);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(84, 122, 104, 0.14), 0 14px 34px rgba(23, 54, 61, 0.07);
 }
-
 .composer textarea,
-.composer textarea:focus,
-.composer textarea:focus-visible,
 .followup input,
 .search-notes textarea,
-.account-form input,
-input,
-textarea {
-  color: var(--ink) !important;
-  background: transparent;
+.account-form input {
+  color: var(--ink);
   caret-color: var(--accent);
 }
-
 textarea::placeholder,
 input::placeholder {
-  color: #87a5a3 !important;
+  color: #60777b;
 }
-
-.composer-divider,
-.field-note-rule,
-.trail-line,
-.answer-tabs,
-.progress-caption,
-.activity-log,
-.source-card,
-.gaps-list > article,
-.message,
-.settings-intro,
-.setting-block,
-.answer-end {
-  border-color: var(--line) !important;
-}
-
 .explore-button,
 .button,
 .followup > button {
-  background: var(--accent) !important;
-  border-color: var(--accent) !important;
-  color: #08231f !important;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
 }
-
 .explore-button:hover:not(:disabled),
-.button:hover:not(:disabled) {
-  background: #a0e5ca !important;
+.button:hover:not(:disabled),
+.followup > button:hover:not(:disabled) {
+  background: #3e6553;
 }
-
+.explore-button:disabled,
+.button:disabled {
+  background: #91aa9d;
+  color: #fff;
+}
 .attachment,
-.suggestions > button,
 .run-badge.complete,
 .trail-stop.done .stop-icon,
 .trail-stop.current .stop-icon,
@@ -2408,200 +2324,197 @@ input::placeholder {
 .review-box,
 .review-box button.active,
 .setting-heading > span.connected,
-.history-list > button > span {
-  background: var(--surface-soft) !important;
-  border-color: #315765 !important;
+.history-list > button > span,
+.settings-intro > span {
+  background: var(--surface-soft);
+  border-color: var(--line);
 }
-
 .attachment,
+.run-badge,
+.trail-stop.done strong,
+.trail-stop.current strong,
 .honest-note,
 .honest-note p,
 .honest-note button,
+.finding-dimension,
+.citations > button,
+.source-links > a,
+.paper-meta > span,
+.source-location > span,
+.review-box button.active,
+.answer-end {
+  color: var(--accent);
+}
+.stop-icon {
+  background: #f3f7f3;
+  border-color: var(--line);
+  color: #6f8f80;
+}
+.stop-icon > i,
+.trail-line.lit:after {
+  background: var(--accent);
+}
+.trail-stop strong,
+.trail-stop small {
+  color: #5b7270;
+}
 .trail-stop.done strong,
-.trail-stop.current strong,
 .trail-stop.done small,
-.trail-stop.current small,
-.finding-title h3,
-.finding > p,
-.source-card h3,
-.gaps-list > article p,
-.review-box p,
-.review-box button.active {
-  color: var(--text-soft) !important;
+.trail-stop.current strong,
+.trail-stop.current small {
+  color: var(--accent);
 }
-
-.answer-tabs > button,
-.answer-tabs > button.active,
-.answer-tabs > button > span,
+.trail-line {
+  background: repeating-linear-gradient(90deg, #c7d7d0 0 4px, transparent 4px 9px);
+}
+.trail-line.lit {
+  background: var(--accent);
+}
+.answer-tabs,
+.progress-caption,
+.activity-log,
+.source-card,
+.gaps-list > article,
+.message,
+.settings-intro,
+.setting-block,
+.answer-end {
+  border-color: var(--line);
+}
+.answer-tabs > button {
+  color: var(--muted);
+  font-size: 12px;
+}
+.answer-tabs > button.active {
+  color: var(--accent);
+}
 .answer-tabs > button.active:after {
-  color: var(--accent) !important;
+  background: var(--accent);
 }
-
 .answer-tabs > button > span,
 .citations > button {
-  background: #173f46 !important;
-  border-color: #2e625f !important;
+  background: var(--surface-soft);
+  border-color: var(--line);
+  color: var(--accent);
 }
-
+.honest-note {
+  margin-bottom: 26px;
+}
+.finding-title > span,
+.source-index {
+  color: var(--accent);
+}
+.field-note > .eyebrow,
+.field-note > span:last-child,
+.search-notes .eyebrow,
+.working > .eyebrow,
+.review-box > span,
+.review-box button,
+.history-list > button > span,
+.settings-intro > span,
+.setting-heading > span,
+.message-sources > button {
+  color: var(--muted);
+}
 .finding > p,
+.answer-summary,
 .message p,
 .source-card p,
 .gaps-list > article p,
-.comparison-table,
-.comparison-table th,
-.comparison-table td {
-  color: var(--text-soft) !important;
+.field-note p,
+.working > p,
+.review-box p,
+.comparison-table {
+  color: var(--text-soft);
 }
-
-.comparison-table th,
-.comparison-table td {
-  border-color: var(--line) !important;
+.finding > p,
+.gaps-list > article p {
+  font-size: 14px;
+  line-height: 1.8;
 }
-
-.field-note,
-.search-notes {
-  background: rgba(13, 36, 49, 0.94) !important;
+.field-note p,
+.source-card p {
+  font-size: 12px;
 }
-
-.search-notes textarea {
-  background: #091d28 !important;
-  border-color: #315765 !important;
+.field-note-rule {
+  background: var(--line);
 }
-
-.delete-project {
-  background: transparent !important;
-  border-color: transparent !important;
-  box-shadow: none !important;
-}
-
-.stop-icon {
-  background: #112d39 !important;
-  border-color: #345865 !important;
-  color: #75928f !important;
-}
-
-.stop-icon > i {
-  background: var(--accent) !important;
-  border-color: var(--surface) !important;
-}
-
-.trail-line {
-  background: repeating-linear-gradient(90deg, #395762 0 4px, transparent 4px 9px) !important;
-}
-
-.trail-line.lit {
-  background: var(--accent) !important;
-}
-
-.trail-line.lit:after {
-  background: var(--accent) !important;
-}
-
 .working-orbit > span {
-  border-color: #42636d !important;
+  border-color: #b7d3d2;
 }
-
-.working-orbit > span:nth-child(2),
-.working-orbit > span:nth-child(3) {
-  background: #4d8178 !important;
-  border-color: var(--surface) !important;
+.search-notes textarea,
+.account-form input,
+.setting-block pre,
+.evidence-modal blockquote {
+  background: #f8faf7;
+  border-color: var(--line);
+  color: var(--text-soft);
 }
-
+.evidence-modal blockquote {
+  border-left-color: var(--accent);
+}
+.modal-backdrop {
+  background: rgba(23, 54, 61, 0.42);
+}
 .source-card .paper-error,
 .form-error,
-.error,
-.recovery {
-  color: #f0b39d !important;
-}
-
 .error {
-  background: #321f23 !important;
-  border-color: #74434b !important;
+  color: #795244;
 }
-
+.error {
+  background: #fbf4ee;
+  border-color: #dfc9bc;
+}
 .recovery {
-  background: #302d1e !important;
-  border-color: #6a5a35 !important;
+  background: #f8f7f0;
+  border-color: #d7d5c7;
+  color: #625b43;
 }
-
-.modal-backdrop {
-  background: rgba(1, 8, 14, 0.78) !important;
+.recovery p {
+  color: #625b43;
 }
-
-.modal {
-  background: #0d2431 !important;
-  border-color: #3a5c66 !important;
-}
-
+.review-box button,
 .history-list > button,
-.history-list > button > span,
 .settings-intro > span,
-.setting-heading > span,
-.setting-heading > span.connected,
-.setting-block pre,
-.review-box,
+.setting-heading > span {
+  border-color: var(--line);
+}
 .review-box button {
-  border-color: var(--line) !important;
+  color: var(--muted);
 }
-
-.history-list > button > span,
-.settings-intro > span,
-.setting-heading > span,
-.setting-heading > span.connected,
-.setting-block pre,
-.review-box,
-.review-box button {
-  background: var(--surface-soft) !important;
-  color: var(--text-soft) !important;
+.review-box button.active {
+  color: var(--accent);
 }
-
-.account-form input {
-  background: #091d28 !important;
-  border-color: #315765 !important;
-}
-
-.evidence-modal blockquote {
-  background: #102d38 !important;
-  border-left-color: var(--accent) !important;
-  color: var(--text-soft) !important;
-}
-
-.source-location > span {
-  background: #173d45 !important;
-}
-
-.empty-state > svg,
-.working-orbit > div > svg,
-.field-note-icon,
-.aside-art,
-.journey-heading > span svg {
-  color: var(--accent) !important;
-}
-
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
 .comparison-scroll:focus-visible {
-  outline-color: var(--accent) !important;
+  outline-color: var(--accent);
 }
-
+@media (max-width: 600px) {
+  .world {
+    background-image: url("/research-day-mobile.png");
+    background-position: center center;
+  }
+  .home-description {
+    font-size: 13px;
+  }
+  .answer-tabs > button {
+    font-size: 11px;
+  }
+  .finding > p,
+  .gaps-list > article p {
+    font-size: 13px;
+  }
+}
 @media print {
-  :root {
-    color-scheme: light;
-    --ink: #17363d;
-    --muted: #46646a;
-    --accent: #2d7969;
-    --line: #e4edeb;
+  body {
+    background: #fff;
   }
-  body,
-  .app {
-    background: white !important;
-    color: #17363d !important;
-  }
-  .answer-panel,
-  .modal {
-    background: white !important;
-    color: #17363d !important;
+  .answer-panel {
+    background: #fff;
+    border: 0;
+    box-shadow: none;
   }
 }
