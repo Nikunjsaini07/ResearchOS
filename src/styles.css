@@ -2075,6 +2075,20 @@ button svg {
 .answer-section .finding:last-child {
   border-bottom: 0;
 }
+.legacy-answer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 20px;
+  margin-bottom: 24px;
+}
+.legacy-answer p {
+  color: var(--muted);
+  font-size: 13px;
+}
 
 @media print {
   .world,

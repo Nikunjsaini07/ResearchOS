@@ -676,6 +676,12 @@ export default function App() {
                 <div className="answer-content">
                   {project?.analysis.papers ? (
                     <>
+                      {!project.analysis.findings && papers.some((p) => p.selected && p.status === "indexed") && (
+                        <div className="legacy-answer">
+                          <p>This answer uses the older paper-by-paper format.</p>
+                          <button className="button" disabled={!!busy || running} onClick={() => runStep("refine")}>Update answer</button>
+                        </div>
+                      )}
                       <div className="answer-intro">
                         <span className="answer-spark">
                           <Sparkles size={20} />
