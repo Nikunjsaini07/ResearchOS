@@ -682,6 +682,12 @@ export default function App() {
                           <button className="button" disabled={!!busy || running} onClick={() => runStep("refine")}>Update answer</button>
                         </div>
                       )}
+                      {project.analysis.mode === "extractive" && !!project.analysis.findings && config?.ai_configured && (
+                        <div className="legacy-answer">
+                          <p>The AI answer did not complete. Search again to find more relevant papers and retry the summary.</p>
+                          <button className="button" disabled={!!busy || running} onClick={() => runStep("research")}>Research again</button>
+                        </div>
+                      )}
                       <div className="answer-intro">
                         <span className="answer-spark">
                           <Sparkles size={20} />
@@ -699,9 +705,7 @@ export default function App() {
                         <div className="honest-note">
                           <Leaf size={16} />
                           <p>
-                            {project.analysis.note?.includes("free model")
-                              ? project.analysis.note
-                              : "These are original source passages. Open Sources to inspect the full paper set."}
+                            {project.analysis.note || "These are original source passages. Open Sources to inspect the full paper set."}
                           </p>
                         </div>
                       )}
@@ -712,7 +716,9 @@ export default function App() {
                             <p className="answer-summary" key={i}>{c.text}{citations(c)}</p>
                           ))
                         ) : (
-                          <p className="answer-summary answer-unavailable">The available passages do not support a verified summary yet. The source evidence is below.</p>
+                          <p className="answer-summary answer-unavailable">{project.analysis.mode === "extractive"
+                            ? "The AI could not complete a summary for this run. See the reason above, then choose Research again."
+                            : "The available passages do not support a cited summary yet. Review the findings below."}</p>
                         )}
                       </section>
                       <section className="answer-section">

@@ -79,7 +79,7 @@ LLM_FREE_ONLY=true
 EMBEDDINGS_ENABLED=false
 ```
 
-Restart the API after changes. Free-only mode rejects paid model IDs and disables all embedding API calls. Retrieval uses local keyword matching. OpenRouter's free router chooses an available model compatible with JSON output; quality, latency, and quotas vary. Rate limits produce a retryable error and never trigger a paid fallback.
+Restart the API after changes. Free-only mode rejects paid model IDs and disables all embedding API calls. Retrieval uses local keyword matching. When `LLM_MODEL=openrouter/free`, the app tries a fixed pair of JSON-capable free models in order, since the random free router may return reasoning without answer text. You can set an explicit `:free` model to use only that model. Free-model availability, latency, and quotas vary; failures are shown in the answer and never trigger a paid fallback.
 
 The **Compare** tab arranges cited findings by method, dataset, results, and limitations; missing evidence is labeled explicitly. After reviewing a finding, choose **Generate report** to refresh the downloadable Markdown. Sources supports additional PDF uploads and selection of up to 20 papers. Research deletion requires confirmation.
 
