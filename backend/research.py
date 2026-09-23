@@ -425,13 +425,38 @@ def analysis_node(state):
                 overview=validate_claims(result.get('overview',[]),evidence)[:2]
                 findings=validate_claims(result.get('findings',[]),evidence)[:8]
                 gaps=validate_claims(result.get('gaps',[]),evidence)[:3]
-                if not overview or not findings:
-                    fallback_note='The AI answer did not contain enough verifiable citations. Showing source evidence instead.'
+                if not findings:
+                    fallback_note='The AI answer did not contain verifiable findings. Showing source evidence instead.'
             except ValueError as exc:
                 log.warning('Answer synthesis unavailable error=%s',exc)
                 fallback_note='AI synthesis was unavailable. Showing source evidence instead of an unsupported answer.'
         else:
             fallback_note='AI synthesis is not configured. Showing source evidence instead of an unsupported answer.'
+
+        if findings and not fallback_note:
+            try:
+                event(state['job_id'],'Summarizing the verified findings into a direct answer',87)
+                allowed_ids={source['id'] for claim in findings for source in claim['sources']}
+                summary_passages=[{'id':e['id'],'paper_id':e['paper_id'],'title':e['title'],
+                                   'text':e['text'][:900]} for e in evidence if e['id'] in allowed_ids]
+                summary=llm(
+                    'Write one coherent, direct answer to the question from the validated findings only. '
+                    'Use 2-4 sentences, explain what the papers collectively support, and name any important limitation. '
+                    'Do not add facts, measurements, or global novelty claims absent from the findings. '
+                    'Return {"summary":{"text":"answer paragraph","dimension":"Summary",'
+                    '"sources":[{"id":"passage ID","quote":"exact verbatim excerpt of at least 20 characters"}]}}. '
+                    'Cite the passages behind the answer, drawing from multiple papers when the findings support it.',
+                    json.dumps({'question':project.question,'validated_findings':findings,
+                                'passages':summary_passages},ensure_ascii=False),
+                )
+                candidate=validate_claims([summary.get('summary')],evidence)
+                if candidate and all(source['id'] in allowed_ids for source in candidate[0]['sources']):
+                    cited_papers={next(e['paper_id'] for e in evidence if e['id']==s['id']) for s in candidate[0]['sources']}
+                    available_papers={e['paper_id'] for e in evidence if e['id'] in allowed_ids}
+                    if len(available_papers)<2 or len(cited_papers)>=2:
+                        overview=candidate[:1]
+            except ValueError as exc:
+                log.warning('Final summary unavailable error=%s',exc)
 
         if fallback_note:
             overview=[]; findings=[]; gaps=[]
@@ -448,6 +473,7 @@ def analysis_node(state):
             analyses.append({'paper_id':paper.id,'title':paper.title,'claims':claims})
         note='Every displayed claim links to a matching PDF passage. Interpretations and possible gaps require human review.'
         if fallback_note: note += ' '+fallback_note
+        elif not overview: note += ' A direct summary could not be verified; review the cited findings below.'
         project.analysis={'overview':overview,'findings':findings,'papers':analyses,'gaps':gaps,
                           'evidence':evidence,'created':now(),'mode':'extractive' if fallback_note else 'synthesized','note':note}
         project.status='analyzed'; project.report=''; db.commit()
@@ -469,7 +495,7 @@ def report_node(state):
         lines=[f'# {p.title}',f'## Research question\n{p.question}','## Direct answer']
         supported_overview=[claim for claim in a.get('overview',[]) if claim['status']!='unsupported']
         if supported_overview:
-            lines.extend('- '+cite(claim) for claim in supported_overview)
+            lines.extend(cite(claim) for claim in supported_overview)
         else:
             lines.append('The selected passages did not support a verified synthesized answer. The evidence below is source text, not an AI-authored conclusion.')
         lines.extend(['## Key findings',a.get('note','')])

@@ -44,7 +44,7 @@ The UI has two main screens: an illustrated question composer and a live researc
 6. Use Sources, Research gaps, and follow-up chat within the same page. Download the report from the header icon.
 7. Continue from the same research page; the current browser session keeps the workspace available.
 
-The automatic research run uses deterministic search terms and one chat-completion request to synthesize a direct answer, findings, and possible gaps across the selected papers. Embeddings, when enabled, make separate batched requests. Each displayed claim must cite a matching PDF passage. Without an AI key, or when the response cannot be verified, the answer clearly labels short source passages and does not fabricate a synthesis or research gaps.
+The automatic research run uses deterministic search terms and up to two chat-completion requests: one extracts cited findings and possible gaps across the selected papers, and one turns validated findings into a direct final summary. Embeddings, when enabled, make separate batched requests. Each displayed claim must cite a matching PDF passage. If the final summary call fails, the first call's verified overview remains available. Without an AI key, or when findings cannot be verified, the answer clearly labels short source passages and does not fabricate a synthesis or research gaps.
 
 ## Architecture
 
