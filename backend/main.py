@@ -689,13 +689,15 @@ def export(pid: str, user=Depends(current_user), db=Depends(db_session)):
     )
 
 
-if Path("dist").exists():
-    app.mount("/assets", StaticFiles(directory="dist/assets"), name="assets")
+dist_dir = Path("dist").resolve()
+if dist_dir.exists():
+    app.mount("/assets", StaticFiles(directory=dist_dir / "assets"), name="assets")
 
     @app.get("/{path:path}")
     def frontend(path: str):
         if path.startswith("api/"):
             raise HTTPException(404, "Endpoint not found")
-        if path in ("favicon.svg", "research-world.png", "research-night.jpg"):
-            return FileResponse("dist/" + path)
-        return FileResponse("dist/index.html")
+        asset = (dist_dir / path).resolve()
+        if asset.is_relative_to(dist_dir) and asset.is_file():
+            return FileResponse(asset)
+        return FileResponse(dist_dir / "index.html")
