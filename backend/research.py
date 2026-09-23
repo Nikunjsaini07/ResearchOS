@@ -210,7 +210,7 @@ def search_arxiv(query, limit=12):
     expression=' AND '.join(f'all:{term}' for term in terms[:5])
     if not expression: return []
     params={'search_query':expression,'start':0,'max_results':limit,'sortBy':'relevance'}
-    headers={'User-Agent':'ResearchOS/0.1 academic research workspace','Accept':'application/atom+xml'}
+    headers={'User-Agent':'ResearchOS/0.1 academic research workspace'}
     root=None
     last_error=None
     for endpoint in ('https://export.arxiv.org/api/query','https://arxiv.org/api/query'):
@@ -222,6 +222,14 @@ def search_arxiv(query, limit=12):
             last_error=exc
             log.warning('arXiv search endpoint failed host=%s error=%s',endpoint,type(exc).__name__)
     if root is None:
+        try:
+            found=search_datacite_arxiv(query,limit)
+            if found:
+                log.info('DataCite supplied %s arXiv papers after arXiv API failure',len(found))
+                cache.put(cache_key,found)
+                return found
+        except Exception as exc:
+            log.warning('DataCite arXiv fallback failed error=%s',type(exc).__name__)
         if isinstance(last_error, httpx.HTTPStatusError):
             status = last_error.response.status_code
             if status == 429:
@@ -238,6 +246,31 @@ def search_arxiv(query, limit=12):
             'year':int(entry.findtext('a:published','0000',ns)[:4]),'url':url,'pdf_url':url.replace('/abs/','/pdf/'),'source':'arXiv','score':round(overlap,3)})
     cache.put(cache_key,found)
     return found
+
+def search_datacite_arxiv(query, limit=12):
+    """Use arXiv's DOI records when its search API rejects our server."""
+    response=request('GET','https://api.datacite.org/dois',params={
+        'query':' '.join(tokens(query)[:8]),'client-id':'arxiv.content',
+        'page[size]':max(limit*2,20),
+    },headers={'User-Agent':'ResearchOS/0.1 academic research workspace'})
+    found=[]
+    for record in response.json().get('data',[]):
+        item=record.get('attributes') or {}
+        url=item.get('url') or ''
+        parsed=urlparse(url)
+        if parsed.hostname not in ('arxiv.org','export.arxiv.org') or not re.fullmatch(r'/abs/[a-zA-Z0-9./-]+',parsed.path):
+            continue
+        titles=item.get('titles') or []
+        title=' '.join((titles[0].get('title') or '').split()) if titles else ''
+        if not title: continue
+        descriptions=item.get('descriptions') or []
+        abstract=' '.join(next((d.get('description','') for d in descriptions if d.get('descriptionType')=='Abstract'),'').split())
+        authors=', '.join(c.get('name','') for c in (item.get('creators') or []) if c.get('name'))
+        overlap=len(set(tokens(query)) & set(tokens(title+' '+abstract)))/max(1,len(set(tokens(query))))
+        found.append({'title':title,'abstract':abstract,'authors':authors,'year':int(item.get('publicationYear') or 0),
+            'url':'https://arxiv.org'+parsed.path,'pdf_url':'https://arxiv.org'+parsed.path.replace('/abs/','/pdf/',1),
+            'source':'arXiv','score':round(overlap,3)})
+    return sorted(found,key=lambda paper:paper['score'],reverse=True)[:limit]
 
 def download_pdf(url):
     parsed=urlparse(url)
