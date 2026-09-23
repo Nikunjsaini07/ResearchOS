@@ -79,7 +79,9 @@ LLM_FREE_ONLY=true
 EMBEDDINGS_ENABLED=false
 ```
 
-Restart the API after changes. Free-only mode rejects paid model IDs and disables all embedding API calls. Retrieval uses local keyword matching. When `LLM_MODEL=openrouter/free`, the app tries a fixed pair of JSON-capable free models in order, since the random free router may return reasoning without answer text. You can set an explicit `:free` model to use only that model. Free-model availability, latency, and quotas vary; failures are shown in the answer and never trigger a paid fallback.
+Restart the API after changes. Free-only mode rejects paid model IDs and disables all embedding API calls. Retrieval uses local keyword matching. When `LLM_MODEL=openrouter/free`, the app reads OpenRouter's current free model catalog and tries compatible JSON-output models in sequence. If the catalog is unavailable, it retries the free router. You can set an explicit `:free` model to use only that model. Free-model availability, latency, and quotas vary; failures are shown in the answer and never trigger a paid fallback.
+
+Automatic research searches the question, selects up to six relevant arXiv papers, and produces one direct AI summary with links to the passages it used. It reads PDF text when available and falls back to the paper abstract when a PDF cannot be downloaded. An abstract-only source is labeled as such, and an AI failure is shown as an error rather than as a stack of source excerpts.
 
 The **Compare** tab arranges cited findings by method, dataset, results, and limitations; missing evidence is labeled explicitly. After reviewing a finding, choose **Generate report** to refresh the downloadable Markdown. Sources supports additional PDF uploads and selection of up to 20 papers. Research deletion requires confirmation.
 

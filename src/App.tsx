@@ -682,9 +682,9 @@ export default function App() {
                           <button className="button" disabled={!!busy || running} onClick={() => runStep("refine")}>Update answer</button>
                         </div>
                       )}
-                      {project.analysis.mode === "extractive" && !!project.analysis.findings && config?.ai_configured && (
+                      {project.analysis.mode !== "synthesized" && !!project.analysis.findings && config?.ai_configured && (
                         <div className="legacy-answer">
-                          <p>The AI answer did not complete. Search again to find more relevant papers and retry the summary.</p>
+                          <p>The AI answer did not complete. Try the research again.</p>
                           <button className="button" disabled={!!busy || running} onClick={() => runStep("research")}>Research again</button>
                         </div>
                       )}
@@ -695,13 +695,13 @@ export default function App() {
                         <div>
                           <span className="eyebrow">HERE’S WHAT WE FOUND</span>
                           <h2>
-                            {project.analysis.mode === "extractive"
-                              ? "Evidence from your papers"
+                            {project.analysis.mode !== "synthesized"
+                              ? "Summary unavailable"
                               : "An answer to your question"}
                           </h2>
                         </div>
                       </div>
-                      {project.analysis.mode === "extractive" && (
+                      {project.analysis.mode !== "synthesized" && (
                         <div className="honest-note">
                           <Leaf size={16} />
                           <p>
@@ -716,12 +716,12 @@ export default function App() {
                             <p className="answer-summary" key={i}>{c.text}{citations(c)}</p>
                           ))
                         ) : (
-                          <p className="answer-summary answer-unavailable">{project.analysis.mode === "extractive"
+                          <p className="answer-summary answer-unavailable">{project.analysis.mode !== "synthesized"
                             ? "The AI could not complete a summary for this run. See the reason above, then choose Research again."
                             : "The available passages do not support a cited summary yet. Review the findings below."}</p>
                         )}
                       </section>
-                      <section className="answer-section">
+                      {!!project.analysis.findings?.length && <section className="answer-section">
                         <h3>{project.analysis.mode === "extractive" ? "Relevant source passages" : "Key findings"}</h3>
                         {(project.analysis.findings ?? project.analysis.papers.flatMap((p) => p.claims))
                           .filter((c) => c.status !== "unsupported")
@@ -732,11 +732,11 @@ export default function App() {
                               <p>{c.text}{citations(c)}</p>
                             </div>;
                           })}
-                      </section>
-                      <div className="answer-end">
+                      </section>}
+                      {project.analysis.mode === "synthesized" && <div className="answer-end">
                         <Check size={15} />
-                        Sources are linked. Interpretations are yours to review.
-                      </div>
+                        Review the linked sources before relying on this summary.
+                      </div>}
                     </>
                   ) : (
                     <div className="empty-state">
@@ -1063,8 +1063,9 @@ export default function App() {
             )}
             <blockquote>{source.text}</blockquote>
             <p className="evidence-note">
-              An original extracted passage. Open the PDF for tables, equations,
-              and the full context.
+              {source.has_pdf
+                ? "An extracted paper passage. Open the PDF for its full context."
+                : "The paper abstract. Open the original source for its full context."}
             </p>
             <div className="source-links">
               {source.has_pdf && (
