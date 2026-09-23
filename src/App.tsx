@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { api, post } from "./api";
+import { api, post, ApiError } from "./api";
 import type {
   Evidence,
   Claim,
@@ -162,6 +162,7 @@ export default function App() {
     [messages, setMessages] = useState<Message[]>([]);
   const [busy, setBusy] = useState(""),
     [error, setError] = useState(""),
+    [authReady, setAuthReady] = useState(false),
     [modal, setModal] = useState(""),
     [source, setSource] = useState<Evidence | null>(null),
     [review, setReview] = useState<Claim | null>(null),
@@ -197,12 +198,26 @@ export default function App() {
   };
   // Fetch a complete workspace; ignore responses for a page we have left.
   const load = useCallback(async (pid: string) => {
-    const [p, ps, js, ms] = await Promise.all([
-      api<Project>("/projects/" + pid),
-      api<Paper[]>("/projects/" + pid + "/papers"),
-      api<Job[]>("/projects/" + pid + "/jobs"),
-      api<Message[]>("/projects/" + pid + "/messages"),
-    ]);
+    let p: Project, ps: Paper[], js: Job[], ms: Message[];
+    try {
+      [p, ps, js, ms] = await Promise.all([
+        api<Project>("/projects/" + pid),
+        api<Paper[]>("/projects/" + pid + "/papers"),
+        api<Job[]>("/projects/" + pid + "/jobs"),
+        api<Message[]>("/projects/" + pid + "/messages"),
+      ]);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404 && routeRef.current === pid) {
+        location.hash = "";
+        routeRef.current = null;
+        setId(null);
+        setProject(null);
+        setJob(null);
+        setError("This guest workspace is no longer available. Start a new question.");
+        return;
+      }
+      throw e;
+    }
     if (routeRef.current !== pid) return;
     setProject(p);
     setPapers(ps);
@@ -211,11 +226,16 @@ export default function App() {
   }, []);
   useEffect(() => {
     api<User>("/auth/me")
+      .catch(async (e) => {
+        if (!(e instanceof ApiError) || e.status !== 401) throw e;
+        return api<User>("/auth/guest", post());
+      })
       .then((u) => {
         setUser(u);
-        api("/settings").then(setConfig);
+        setAuthReady(true);
+        api("/settings").then(setConfig).catch((e) => setError(e.message));
       })
-      .catch(() => {});
+      .catch((e) => setError(e.message));
     const change = () => {
       const hash = location.hash;
       setId(hash.startsWith("#research/") ? hash.slice(10) : null);
@@ -224,8 +244,8 @@ export default function App() {
     return () => window.removeEventListener("hashchange", change);
   }, []);
   useEffect(() => {
-    if (id) load(id).catch((e) => setError(e.message));
-  }, [id, load]);
+    if (id && authReady) load(id).catch((e) => setError(e.message));
+  }, [id, authReady, load]);
   useEffect(() => {
     if (!id || !running) return;
     const timer = setInterval(

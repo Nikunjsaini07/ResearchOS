@@ -43,7 +43,7 @@ def request(method, url, **kwargs):
                 return r
         except (httpx.TimeoutException, httpx.NetworkError, httpx.HTTPStatusError) as exc:
             if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code not in (429, 500, 502, 503, 504): raise
-            if attempt == 2: raise
+            if attempt == attempts - 1: raise
             time.sleep(2 ** attempt)
 
 def parse_json_object(value):
@@ -222,7 +222,12 @@ def search_arxiv(query, limit=12):
             last_error=exc
             log.warning('arXiv search endpoint failed host=%s error=%s',endpoint,type(exc).__name__)
     if root is None:
-        raise ValueError('Academic search is temporarily unavailable.') from last_error
+        if isinstance(last_error, httpx.HTTPStatusError):
+            status = last_error.response.status_code
+            if status == 429:
+                raise ValueError('arXiv is limiting searches right now. Wait a few minutes and try again.') from last_error
+            raise ValueError(f'arXiv search returned HTTP {status}. Try again later or upload a PDF.') from last_error
+        raise ValueError('Cannot reach arXiv right now. Try again later or upload a PDF.') from last_error
     ns={'a':'http://www.w3.org/2005/Atom'}; found=[]
     for entry in root.findall('a:entry',ns):
         url=entry.findtext('a:id','',ns).replace('http:','https:')
@@ -303,9 +308,14 @@ def discovery_node(state):
                     if key not in known:
                         db.add(Paper(project_id=p.id,**item)); known.add(key); added+=1
                 db.commit()
-            except Exception as exc: errors.append(type(exc).__name__)
+            except Exception as exc:
+                log.warning('Paper discovery failed query=%r error=%s',query,exc)
+                errors.append(str(exc) if isinstance(exc, ValueError) else type(exc).__name__)
             if index<len(queries[:3])-1: time.sleep(3)
-        if errors and not added: raise ValueError('Academic search is unavailable. Retry shortly or upload PDFs directly.')
+        if errors and not added:
+            raise ValueError(errors[0] if len(errors) == len(queries[:3]) else 'Paper search found no new results. Try a broader query or upload a PDF.')
+        if not added and not known:
+            raise ValueError('No papers matched those search terms. Try a broader query or upload a PDF.')
         p.status='discovered'; db.commit()
         event(state['job_id'],f'{added} new papers added; duplicates removed.'+(' Some queries failed; retry discovery for more results.' if errors else ''),100)
     return state
