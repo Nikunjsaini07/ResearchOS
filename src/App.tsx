@@ -147,9 +147,13 @@ function Modal({
   );
 }
 export default function App() {
+  const connectionMessage = "Connection lost. Your saved research will return when you reconnect.";
   // State holds the current question, research results, and open dialogs.
   const [user, setUser] = useState<User | null>(null),
-    [question, setQuestion] = useState(""),
+    [question, setQuestion] = useState(() => {
+      try { return localStorage.getItem("researchos:draftQuestion") || ""; }
+      catch { return ""; }
+    }),
     [attachment, setAttachment] = useState<File | null>(null),
     [id, setId] = useState(
       location.hash.replace("#research/", "").startsWith("#")
@@ -176,6 +180,12 @@ export default function App() {
     [activity, setActivity] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null),
     routeRef = useRef(id);
+  useEffect(() => {
+    try {
+      if (question) localStorage.setItem("researchos:draftQuestion", question);
+      else localStorage.removeItem("researchos:draftQuestion");
+    } catch {}
+  }, [question]);
   routeRef.current = id;
   const running = job?.status === "queued" || job?.status === "running";
   const stage =
@@ -223,37 +233,73 @@ export default function App() {
     setPapers(ps);
     setJob(js[0] || null);
     setMessages(ms);
+    setError((current) => current === connectionMessage ? "" : current);
   }, []);
   useEffect(() => {
-    api<User>("/auth/me")
-      .catch(async (e) => {
-        if (!(e instanceof ApiError) || e.status !== 401) throw e;
-        return api<User>("/auth/guest", post());
-      })
-      .then((u) => {
+    let active = true;
+    let retry: number | undefined;
+    const restore = async () => {
+      try {
+        let u: User;
+        try {
+          u = await api<User>("/auth/me");
+        } catch (e) {
+          if (!(e instanceof ApiError) || e.status !== 401) throw e;
+          if (location.hash.startsWith("#research/")) {
+            throw new ApiError("Your session expired. This guest workspace cannot be recovered; start a new question.", 401);
+          }
+          u = await api<User>("/auth/guest", post());
+        }
+        if (!active) return;
         setUser(u);
         setAuthReady(true);
-        api("/settings").then(setConfig).catch((e) => setError(e.message));
-      })
-      .catch((e) => setError(e.message));
+        setError((current) => current === connectionMessage ? "" : current);
+        api("/settings").then(setConfig).catch(() => {});
+      } catch (e) {
+        if (!active) return;
+        if (!(e instanceof ApiError) || e.status === 429 || e.status >= 500) {
+          setError(connectionMessage);
+          retry = window.setTimeout(restore, 5000);
+        } else {
+          setError((e as Error).message);
+        }
+      }
+    };
+    restore();
+    const reconnect = () => {
+      window.clearTimeout(retry);
+      restore();
+    };
+    window.addEventListener("online", reconnect);
     const change = () => {
       const hash = location.hash;
       setId(hash.startsWith("#research/") ? hash.slice(10) : null);
     };
     window.addEventListener("hashchange", change);
-    return () => window.removeEventListener("hashchange", change);
+    return () => {
+      active = false;
+      window.clearTimeout(retry);
+      window.removeEventListener("online", reconnect);
+      window.removeEventListener("hashchange", change);
+    };
   }, []);
   useEffect(() => {
-    if (id && authReady) load(id).catch((e) => setError(e.message));
+    if (id && authReady) load(id).catch((e) => setError(e instanceof ApiError && e.status < 500 ? e.message : connectionMessage));
   }, [id, authReady, load]);
   useEffect(() => {
     if (!id || !running) return;
     const timer = setInterval(
-      () => load(id).catch((e) => setError(e.message)),
+      () => load(id).catch((e) => setError(e instanceof ApiError && e.status < 500 ? e.message : connectionMessage)),
       1500,
     );
     return () => clearInterval(timer);
   }, [id, running, load]);
+  useEffect(() => {
+    if (!id || !authReady) return;
+    const reconnect = () => load(id).catch((e) => setError((e as Error).message));
+    window.addEventListener("online", reconnect);
+    return () => window.removeEventListener("online", reconnect);
+  }, [id, authReady, load]);
   // Give every asynchronous action the same loading and error handling.
   async function action(name: string, fn: () => Promise<void>) {
     setBusy(name);

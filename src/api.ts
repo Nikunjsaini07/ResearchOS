@@ -5,20 +5,6 @@ export class ApiError extends Error {
   }
 }
 
-let guestRefresh: Promise<void> | null = null;
-
-async function renewGuestSession() {
-  if (!guestRefresh) {
-    guestRefresh = fetch("/api/auth/guest", {
-      method: "POST",
-      credentials: "same-origin",
-    }).then(async (response) => {
-      if (!response.ok) throw new Error("Could not restore your guest session. Please refresh the page.");
-    }).finally(() => { guestRefresh = null; });
-  }
-  return guestRefresh;
-}
-
 export async function api<T = any>(
   path: string,
   options: RequestInit = {},
@@ -31,11 +17,7 @@ export async function api<T = any>(
         ? {}
         : { "Content-Type": "application/json", ...options.headers },
   });
-  let r = await request();
-  if (r.status === 401 && !path.startsWith("/auth/")) {
-    await renewGuestSession();
-    r = await request();
-  }
+  const r = await request();
   if (!r.ok) {
     const text = await r.text();
     let message = text;

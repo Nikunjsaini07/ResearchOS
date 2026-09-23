@@ -250,24 +250,29 @@ def password_hash(password, salt=None):
 
 
 def login_cookie(db, user, response):
+    lifetime = 30 * 86400
     token = secrets.token_urlsafe(32)
     db.add(
         AuthSession(
             id=hashlib.sha256(token.encode()).hexdigest(),
             user_id=user.id,
-            expires=time.time() + 7 * 86400,
+            expires=time.time() + lifetime,
         )
     )
     db.commit()
+    set_session_cookie(response, token, lifetime)
+    return public(user, ("password",))
+
+
+def set_session_cookie(response, token, lifetime=30 * 86400):
     response.set_cookie(
         "researchos_session",
         token,
         httponly=True,
         secure=os.getenv("COOKIE_SECURE", "false").lower() == "true",
         samesite="lax",
-        max_age=7 * 86400,
+        max_age=lifetime,
     )
-    return public(user, ("password",))
 
 
 @app.get("/api/health")
@@ -360,7 +365,12 @@ def logout(request: Request, response: Response, db=Depends(db_session)):
 
 
 @app.get("/api/auth/me")
-def me(user=Depends(current_user)):
+def me(request: Request, response: Response, user=Depends(current_user), db=Depends(db_session)):
+    token = request.cookies["researchos_session"]
+    session = db.get(AuthSession, hashlib.sha256(token.encode()).hexdigest())
+    session.expires = time.time() + 30 * 86400
+    db.commit()
+    set_session_cookie(response, token)
     return public(user, ("password",))
 
 
