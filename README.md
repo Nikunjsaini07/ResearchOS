@@ -3,6 +3,9 @@
 Ask a research question, find papers, read their evidence, and build a sourced answer.
 The browser uses **React + TypeScript**; the server uses **Python + FastAPI**.
 
+For a presentation-ready explanation of the workflow, tech stack, and RAG, see
+[How ResearchOS works](docs/researchos-rag-explained.md).
+
 ## Start here
 
 Read these files in order. You do not need to understand every file at once.
