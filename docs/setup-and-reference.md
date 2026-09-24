@@ -1,6 +1,6 @@
 # ResearchOS
 
-A working research workspace built with React, TypeScript, FastAPI, SQLAlchemy, and LangGraph. Discover academic papers, select a corpus, index PDF passages, inspect evidence, compare findings, explore potential gaps, and export a sourced review.
+A working research workspace built with React, TypeScript, FastAPI, SQLAlchemy, and LangGraph. Discover academic papers, select a corpus, index PDF passages, inspect evidence, ask follow-up questions, and export a sourced review.
 
 ## Quick start (Windows)
 
@@ -21,7 +21,7 @@ For frontend development, run `npm run dev` in another terminal. Vite proxies `/
 
 No credentials are needed for guest workspaces, projects, arXiv discovery, uploads, keyword evidence retrieval, PDF reading, or local persistence.
 
-To enable AI analysis, gap hypotheses, and synthesized answers, set these values in `.env` and restart the backend:
+To enable AI-authored summaries and synthesized follow-up answers, set these values in `.env` and restart the backend:
 
 ```dotenv
 LLM_API_KEY=your-key
@@ -39,12 +39,12 @@ The UI has two main screens: an illustrated question composer and a live researc
 1. Type a question on the home page; optionally attach a PDF.
 2. Click **Let's explore**. A private guest workspace is created automatically; no login wall.
 3. Watch the horizontal trail: plan, find papers, read and collect, connect ideas, answer.
-4. Without an attached PDF, the pipeline discovers papers and selects the five highest-ranked results. With an upload, it uses that supplied corpus.
+4. Without an attached PDF, the pipeline discovers papers and selects up to six relevant results. With an upload, it uses that supplied corpus.
 5. Read the answer and open numbered citations to inspect the original page-level passages.
-6. Use Sources, Research gaps, and follow-up chat within the same page. Download the report from the header icon.
+6. Inspect Sources, compare available findings, and ask follow-up questions within the same page. Download the report from the header icon. The Research gaps tab currently has no automatically generated gap claims.
 7. Continue from the same research page; the current browser session keeps the workspace available.
 
-The automatic research run uses deterministic search terms and up to two chat-completion requests: one extracts cited findings and possible gaps across the selected papers, and one turns validated findings into a direct final summary. Embeddings, when enabled, make separate batched requests. Each displayed claim must cite a matching PDF passage. If the final summary call fails, the first call's verified overview remains available. Without an AI key, or when findings cannot be verified, the answer clearly labels short source passages and does not fabricate a synthesis or research gaps.
+The automatic run generates search terms with Python rules, then normally makes one chat-completion request to draft a direct answer and supporting points from sampled passages. Optional embeddings make separate batched requests. The initial answer maps returned source IDs to stored passages, but that mapping does not verify the scientific interpretation. The final Markdown report formats the saved analysis without another LLM request. If AI synthesis fails or is not configured, the app reports that limitation and keeps the source evidence available instead of fabricating a conclusion.
 
 ## Architecture
 
@@ -83,15 +83,15 @@ Restart the API after changes. Free-only mode rejects paid model IDs and disable
 
 Automatic research searches the question, selects up to six relevant arXiv papers, and produces one direct AI summary with links to the passages it used. It reads PDF text when available and falls back to the paper abstract when a PDF cannot be downloaded. An abstract-only source is labeled as such, and an AI failure is shown as an error rather than as a stack of source excerpts.
 
-The **Compare** tab arranges cited findings by method, dataset, results, and limitations; missing evidence is labeled explicitly. After reviewing a finding, choose **Generate report** to refresh the downloadable Markdown. Sources supports additional PDF uploads and selection of up to 20 papers. Research deletion requires confirmation.
+The **Compare** tab shows available findings and marks missing comparisons; how much it can compare depends on the sourced answer. After reviewing a finding, choose **Generate report** to refresh the downloadable Markdown. Sources supports additional PDF uploads and selection of up to 20 papers. Research deletion requires confirmation.
 
 ## Practical limits
 
 - arXiv is the initial discovery source. Other PDFs can be uploaded manually. Restricted/paywalled content is not bypassed.
 - PDFs must contain extractable text; OCR is not included. Uploads are limited to 25 MB / 300 pages.
-- Runs support up to 20 selected papers. Analysis samples up to 24 passages per paper. Tables and equations can be damaged by PDF extraction. Read the original PDF when checking claims.
-- Only claims with valid chunk IDs and exact supporting quotations are retained. They begin marked **needs review**, because a matched quote does not establish scientific correctness. Use **Review finding** to record supported, partially supported, unsupported, or conflicting judgments. Unsupported findings are excluded from regenerated reports.
-- Research gaps describe the selected corpus; they are not claims of global novelty.
+- Runs support up to 20 selected papers. The initial answer samples at most two passages per paper and sends up to 700 characters from each to the LLM. Tables and equations can be damaged by PDF extraction. Read the original PDF when checking claims.
+- The initial answer maps source IDs to real stored passages; follow-up chat additionally requires quoted text to occur in a retrieved passage. Neither check proves a claim is scientifically correct. Findings begin marked **needs review**. Use **Review finding** to record supported, partially supported, unsupported, or conflicting judgments. Unsupported findings are excluded from regenerated reports.
+- The Research gaps tab exists, but the current automatic analysis does not generate gap claims.
 - The report is a structured synthesis of sourced findings, not an autonomous systematic review.
 - The local SQLite mode computes vector similarity in-process. PostgreSQL uses pgvector exact distance queries; approximate-nearest-neighbor indexing and corpus pagination are future scale work.
 - Email verification, password reset, collaborative teams, scientific benchmark results, and large-scale retrieval tuning are not included.
