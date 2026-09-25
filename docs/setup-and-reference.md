@@ -41,10 +41,10 @@ The UI has two main screens: an illustrated question composer and a live researc
 3. Watch the horizontal trail: plan, find papers, read and collect, connect ideas, answer.
 4. Without an attached PDF, the pipeline discovers papers and selects up to six relevant results. With an upload, it uses that supplied corpus.
 5. Read the answer and open numbered citations to inspect the original page-level passages.
-6. Inspect Sources, compare available findings, and ask follow-up questions within the same page. Download the report from the header icon. The Research gaps tab currently has no automatically generated gap claims.
+6. Inspect Sources, compare available findings, explore cited research directions, and ask follow-up questions within the same page. Download the report from the header icon.
 7. Continue from the same research page; the current browser session keeps the workspace available.
 
-The automatic run generates search terms with Python rules, then normally makes one chat-completion request to draft a direct answer and supporting points from sampled passages. Optional embeddings make separate batched requests. The initial answer maps returned source IDs to stored passages, but that mapping does not verify the scientific interpretation. The final Markdown report formats the saved analysis without another LLM request. If AI synthesis fails or is not configured, the app reports that limitation and keeps the source evidence available instead of fabricating a conclusion.
+The automatic run generates search terms with Python rules, then normally makes one chat-completion request to draft a direct answer and supporting points from sampled passages. A second request examines limitation and conclusion passages for 1–3 concrete directions to investigate. Each direction needs a verbatim quote from a supplied passage, a reason, and a practical next step. Optional embeddings make separate batched requests. Source mapping and quote matching do not verify the scientific interpretation. The final Markdown report formats the saved analysis without another LLM request. If AI synthesis fails or is not configured, the app reports that limitation and keeps the source evidence available instead of fabricating a conclusion.
 
 ## Architecture
 
@@ -91,7 +91,7 @@ The **Compare** tab shows available findings and marks missing comparisons; how 
 - PDFs must contain extractable text; OCR is not included. Uploads are limited to 25 MB / 300 pages.
 - Runs support up to 20 selected papers. The initial answer samples at most two passages per paper and sends up to 700 characters from each to the LLM. Tables and equations can be damaged by PDF extraction. Read the original PDF when checking claims.
 - The initial answer maps source IDs to real stored passages; follow-up chat additionally requires quoted text to occur in a retrieved passage. Neither check proves a claim is scientifically correct. Findings begin marked **needs review**. Use **Review finding** to record supported, partially supported, unsupported, or conflicting judgments. Unsupported findings are excluded from regenerated reports.
-- The Research gaps tab exists, but the current automatic analysis does not generate gap claims.
+- Research directions come from selected passages, especially limitations and conclusions. They are hypotheses for a wider literature search, not claims of global novelty. No direction is shown unless the quoted support matches a stored passage.
 - The report is a structured synthesis of sourced findings, not an autonomous systematic review.
 - The local SQLite mode computes vector similarity in-process. PostgreSQL uses pgvector exact distance queries; approximate-nearest-neighbor indexing and corpus pagination are future scale work.
 - Email verification, password reset, collaborative teams, scientific benchmark results, and large-scale retrieval tuning are not included.

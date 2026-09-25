@@ -864,13 +864,10 @@ export default function App() {
                           <Leaf size={22} />
                         </span>
                         <div>
-                          <span className="eyebrow">
-                            A POSSIBILITY TO EXPLORE
-                          </span>
-                          <p>
-                            {c.text}
-                            {citations(c)}
-                          </p>
+                          <span className="eyebrow">RESEARCH DIRECTION {i + 1}</span>
+                          <h3 className="gap-question">{c.text}</h3>
+                          {c.rationale && <p>{c.rationale}{citations(c)}</p>}
+                          {c.next_step && <p><strong>How to investigate:</strong> {c.next_step}</p>}
                         </div>
                       </article>
                     ))
@@ -880,7 +877,7 @@ export default function App() {
                       <h2>There’s always more to explore.</h2>
                       <p>
                         {config?.ai_configured
-                          ? "No sufficiently supported gaps have been identified yet."
+                          ? "The selected passages did not support a specific research direction. Try adding more relevant papers or a full-text PDF."
                           : "No synthesized research gaps are available for this run."}
                       </p>
                     </div>

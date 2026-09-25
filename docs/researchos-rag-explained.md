@@ -36,7 +36,7 @@ flowchart LR
 | **Make a plan** | Remove common words, normalize terms, and form up to three search queries from the question. | Python rules; no LLM. |
 | **Find papers** | Search arXiv, remove duplicate titles, score title and abstract relevance, and automatically select up to six papers. An uploaded corpus is used instead of arXiv search. | arXiv API; DataCite can provide arXiv records if arXiv search fails. No LLM. |
 | **Read & collect** | Download or read the selected PDFs, extract text page by page, split it into passages, and store each passage with its source and location. Optionally create embeddings. | PDF parser; optional embedding API. No chat-model summary yet. |
-| **Connect ideas** | Choose a small set of passages and send those passages, their IDs, and the full original question to the LLM. Request a direct answer and up to four supporting findings. | Normally one chat-model call, although provider retries/fallbacks can make more attempts. |
+| **Connect ideas** | Send selected passages and the full question to the LLM for a direct answer and supporting findings. Inspect limitation and conclusion excerpts in a second call for cited questions worth investigating. | Normally two chat-model calls, although provider retries/fallbacks can make more attempts. |
 | **Your answer** | Format the saved answer, findings, source references, methodology, and limitations as a report. | No additional LLM call. |
 
 ### 1. Make a plan: keyword generation
@@ -121,7 +121,7 @@ API keys stay on the server. The browser calls its own `/api` routes and uses a 
 
 ### External calls in a normal research run
 
-The plan itself makes no AI call. Discovery prepares up to three arXiv searches; retries and the DataCite fallback can increase the number of actual HTTP requests. Indexing may download one PDF per selected paper and call the embedding API in batches of up to 32 passages. Analysis normally makes one LLM chat-completion call for the initial answer. Report assembly makes no further LLM call. A follow-up question can make one query-embedding call and one LLM call when those features are configured.
+The plan itself makes no AI call. Discovery prepares up to three arXiv searches; retries and the DataCite fallback can increase the number of actual HTTP requests. Indexing may download one PDF per selected paper and call the embedding API in batches of up to 32 passages. Analysis normally makes one LLM chat-completion call for the initial answer and a second call for source-backed research directions. Report assembly makes no further LLM call. A follow-up question can make one query-embedding call and one LLM call when those features are configured.
 
 ## Honest limitations to mention in a presentation
 
@@ -129,7 +129,7 @@ The plan itself makes no AI call. Discovery prepares up to three arXiv searches;
 - The initial LLM answer sees only sampled excerpts, so important details elsewhere in a paper can be missed.
 - Initial-answer retrieval is lexical rather than vector-based; vector similarity is used for follow-up retrieval when available.
 - A linked passage is evidence to inspect, not automatic proof that the generated claim is valid. Human review remains necessary.
-- The current automatic analysis does not actually generate research-gap claims, even though the interface has a Research gaps area.
+- Research directions require exact quotes from sampled limitation or conclusion passages. They are useful questions for further study, not proof that a gap exists across the entire literature.
 - PDFs with no extractable text need OCR. External search, PDF, embedding, or LLM services can fail or rate-limit requests.
 - Jobs run in the server process. If that process restarts during a run, the job is marked failed and must be retried.
 

@@ -1054,10 +1054,22 @@ button svg {
   color: #97ac7c;
   margin-top: 3px;
 }
+.gap-question {
+  color: #294638;
+  font-size: 17px;
+  line-height: 1.45;
+  font-weight: 600;
+  margin-top: 8px;
+}
 .gaps-list > article p {
   font-size: 13px;
-  color: #748661;
-  margin-top: 7px;
+  color: #526657;
+  margin-top: 10px;
+  line-height: 1.65;
+}
+.gaps-list > article p strong {
+  color: #294638;
+  font-weight: 600;
 }
 .gap-note {
   font-size: 10px;

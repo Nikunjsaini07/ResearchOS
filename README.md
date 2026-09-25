@@ -11,7 +11,7 @@ Start with a question such as *“How do neural networks classify images?”* an
 1. **Plans searches.** Python rules turn meaningful words in the question into up to three search queries. This stage does **not** use an LLM.
 2. **Finds papers.** It searches arXiv, removes duplicates, ranks title and abstract relevance, and automatically selects up to six papers. If you attached a PDF, the run uses the uploaded corpus instead.
 3. **Reads sources.** It extracts text from the selected PDFs, divides it into page-linked passages, and optionally creates embedding vectors for later retrieval. If an arXiv PDF is unavailable, its abstract may be used and is labeled as such.
-4. **Writes an answer.** It selects a small number of relevant passages and sends them with your *full original question* to the configured LLM. The result includes a direct answer and supporting points linked to source passages.
+4. **Writes an answer and suggests next questions.** It sends relevant passages with your *full original question* to the configured LLM for a direct answer and supporting points. A separate call inspects limitations and conclusions to suggest up to three source-backed research directions, each with a practical next step.
 5. **Builds a review.** It assembles the answer, findings, search method, limitations, and references into a downloadable Markdown report. This formatting step does not make another LLM call.
 
 The progress trail on the page corresponds to these five steps. Projects, papers, passages, job progress, and reports are stored so you can return to a workspace. Guest access is created automatically; you can also create an account.
@@ -91,5 +91,5 @@ To follow one question through the code, start at `begin` in `src/App.tsx`, then
 - The first answer sees sampled excerpts, not entire PDFs. It can miss a relevant result elsewhere in a paper.
 - Scanned PDFs need OCR before text can be extracted. Uploads are limited to 25 MB and 300 pages.
 - A linked passage supports inspection, not automatic scientific verification. Check important claims in the original paper.
-- The Research gaps view exists, but the current automatic analysis does not generate gap claims.
+- Research directions are suggestions grounded in quoted passages from this small corpus. They are not proof that a topic is unstudied; inspect the cited papers and search more widely before treating one as a gap.
 - External search and AI providers may be unavailable or rate-limit requests. An interrupted server-side job can be retried.

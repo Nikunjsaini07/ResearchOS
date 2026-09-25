@@ -14,6 +14,8 @@ export type Claim = {
   dimension: string;
   sources: { id: string; quote: string }[];
   status: string;
+  rationale?: string;
+  next_step?: string;
 };
 export type Project = {
   id: string;
