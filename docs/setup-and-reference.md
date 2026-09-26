@@ -42,7 +42,7 @@ The UI has two main screens: an illustrated question composer and a live researc
 4. Without an attached PDF, the pipeline discovers papers and selects up to six relevant results. With an upload, it uses that supplied corpus.
 5. Read the answer and open numbered citations to inspect the original page-level passages.
 6. Inspect Sources, compare available findings, explore cited research directions, and ask follow-up questions within the same page. Download the report from the header icon.
-7. Continue from the same research page; the current browser session keeps the workspace available.
+7. Ask follow-ups while this conversation stays open. Leaving it saves a read-only text history; reopening history cannot resume research. PDFs are discarded after extraction. Temporary passages and embeddings are removed on close, or after one hour without a research action. Running jobs finish before cleanup.
 
 The automatic run generates search terms with Python rules, then normally makes one chat-completion request to draft a direct answer and supporting points from sampled passages. A second request examines limitation and conclusion passages for 1–3 concrete directions to investigate. Each direction needs a verbatim quote from a supplied passage, a reason, and a practical next step. Optional embeddings make separate batched requests. Source mapping and quote matching do not verify the scientific interpretation. The final Markdown report formats the saved analysis without another LLM request. If AI synthesis fails or is not configured, the app reports that limitation and keeps the source evidence available instead of fabricating a conclusion.
 
@@ -64,7 +64,7 @@ Copy-Item .env.example .env
 docker compose up --build
 ```
 
-The app runs at http://localhost:8000. Database and PDFs use named volumes. PostgreSQL and Redis are internal services. The sample database password is for local development; replace it before hosting. Set COOKIE_SECURE=true behind HTTPS and explicitly configure ALLOWED_ORIGINS for the deployment origin. Do not expose this development configuration directly to the internet.
+The app runs at http://localhost:8000. The database uses a named volume. The existing `papers` volume remains mounted only so older PDFs can be removed during migration; new PDFs are not written there. PostgreSQL and Redis are internal services. The sample database password is for local development; replace it before hosting. Set COOKIE_SECURE=true behind HTTPS and explicitly configure ALLOWED_ORIGINS for the deployment origin. Do not expose this development configuration directly to the internet.
 
 The lockfile records the verified dependency versions; requirements.txt records the intended version ranges.
 

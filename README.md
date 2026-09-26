@@ -14,7 +14,7 @@ Start with a question such as *“How do neural networks classify images?”* an
 4. **Writes an answer and suggests next questions.** It sends relevant passages with your *full original question* to the configured LLM for a direct answer and supporting points. A separate call inspects limitations and conclusions to suggest up to three source-backed research directions, each with a practical next step.
 5. **Builds a review.** It assembles the answer, findings, search method, limitations, and references into a downloadable Markdown report. This formatting step does not make another LLM call.
 
-The progress trail on the page corresponds to these five steps. Projects, papers, passages, job progress, and reports are stored so you can return to a workspace. Guest access is created automatically; you can also create an account.
+The progress trail on the page corresponds to these five steps. The current conversation can use temporary passages for follow-up questions. Past conversations retain only the question, result text, and transcript. Guest access is created automatically; you can also create an account.
 
 ## Where RAG fits
 
@@ -38,11 +38,18 @@ Source links make the output inspectable, but they do not automatically prove th
 | **pypdf** | Extracts PDF text into page-linked passages. |
 | **SQLAlchemy + PostgreSQL/SQLite** | Stores users, projects, papers, passages, vectors, jobs, reports, and messages. SQLite is the local default. |
 | **pgvector** | Vector similarity search on PostgreSQL when embeddings are configured. |
-| **Supabase Storage or local files** | Stores PDF bytes separately from database records. |
 | **OpenAI-compatible APIs** | Configurable LLM for answers and optional embedding model for semantic retrieval. |
 | **Docker** | Builds the frontend and runs the API; the deployed app uses Render. Redis can optionally cache searches. |
 
 The browser calls `/api` on the same site. Provider credentials stay on the server, and the browser session uses an HTTP-only cookie.
+
+## Accounts and saved research
+
+ResearchOS starts with a private guest session. **Conversation history** lists saved questions, results, and conversation text. History is read-only; start a new question to research further. Creating an account claims the current guest history; signing in to an existing account also moves that browser's guest history into the account. **Sign out** is available from the account menu. The login cookie lasts 30 days and is renewed when the app is opened.
+
+New PDFs are processed and discarded after extraction. Passages, embeddings, paper records, and evidence are temporary working data for the open conversation. Leaving the page, opening history, or signing out closes that workspace. Abandoned workspaces expire after one hour without a research action, with cleanup checked every minute. A running job finishes before cleanup, so its result is preserved. History retains result Markdown and message text (including reference titles/URLs), with no PDFs or retrieval index. Existing workspaces from older versions are converted to text history at startup; legacy PDF deletion is retried if storage is unavailable.
+
+The cookie contains only a random session token. Accounts and text history need a persistent database across deployments; no PDF storage bucket is needed for new research. See [Supabase setup](docs/supabase-setup.md).
 
 ## Run locally on Windows
 
@@ -69,7 +76,7 @@ npm run dev
 
 Open **http://127.0.0.1:5173**. Vite forwards `/api` requests to the Python server. To serve the built frontend through FastAPI, run `npm run build` before starting the API, then open **http://127.0.0.1:8000**.
 
-The example `.env` uses SQLite and local PDF files. Paper search, uploads, and keyword retrieval can run without an AI key; a synthesized answer requires `LLM_API_KEY`. Embeddings additionally require an enabled embedding provider. Do not commit `.env` or put provider keys in frontend code. For server setup, see [configuration and Docker](docs/setup-and-reference.md) or [Supabase setup](docs/supabase-setup.md).
+The example `.env` uses SQLite. Paper search, uploads, and keyword retrieval can run without an AI key; a synthesized answer requires `LLM_API_KEY`. Embeddings additionally require an enabled embedding provider. Do not commit `.env` or put provider keys in frontend code. For server setup, see [configuration and Docker](docs/setup-and-reference.md) or [Supabase setup](docs/supabase-setup.md).
 
 ## Code map
 
@@ -80,7 +87,8 @@ The example `.env` uses SQLite and local PDF files. Paper search, uploads, and k
 | `backend/main.py` | API routes, auth, job worker, uploads, and chat. |
 | `backend/research.py` | Query rules, paper discovery, PDF chunking, retrieval, LLM synthesis, and reports. |
 | `backend/db.py` | Database schema, including passages and optional vectors. |
-| `backend/storage.py` | Private Supabase or local PDF storage. |
+| `backend/history.py` | Text history, workspace expiry, and removal of temporary research data. |
+| `backend/storage.py` | Reading and deleting legacy PDFs; new PDFs are not saved. |
 | `backend/cache.py` | Optional Redis search cache. |
 
 To follow one question through the code, start at `begin` in `src/App.tsx`, then `run` and `worker` in `backend/main.py`, then the `auto_*` stages in `backend/research.py`.

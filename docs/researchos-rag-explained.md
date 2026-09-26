@@ -61,7 +61,7 @@ Finding a paper here means **finding a candidate and its metadata**. It does not
 
 For each selected paper, the app downloads its PDF or reads the uploaded file. `pypdf` extracts text page by page. The parser recognizes some section headings and divides extracted text into passages of roughly 1,800 characters. The database stores each passage with its paper ID, page number, section, and text. If embeddings are enabled and the embedding provider is available, it also stores a vector for each passage; requests are batched in groups of 32 passages.
 
-The PDF itself is kept separately: in private Supabase Storage when configured, or in the local data directory during local development. If an arXiv PDF cannot be read but its abstract is long enough, the app can index the abstract as a fallback. Scanned PDFs without extractable text require OCR before this pipeline can use them.
+PDF bytes are discarded after extraction. Passages, vectors, and paper metadata are temporary working data for the open conversation. Closing it or reaching the one-hour inactivity limit removes that data after any running job finishes. Saved history contains only the question, result Markdown, and conversation text; it cannot resume retrieval. If an arXiv PDF cannot be read but its abstract is long enough, the app can index the abstract as a fallback. Scanned PDFs require OCR before this pipeline can use them.
 
 ### 4. Connect ideas: answer from selected evidence
 
@@ -112,7 +112,6 @@ The percentage is an **approximate stage-weighted progress indicator**, not an e
 | PDF processing | pypdf | Extracts page text for chunking. |
 | Database | SQLAlchemy with PostgreSQL in deployment or SQLite locally | Stores users, sessions, projects, papers, passages, vectors, jobs, reports, and messages. |
 | Vector search | pgvector on PostgreSQL | Supports semantic retrieval for follow-up questions when embeddings are available. |
-| PDF object storage | Private Supabase Storage when configured; local files otherwise | Stores PDF bytes separately from passage metadata. |
 | AI providers | Configured OpenAI-compatible chat API and optional embedding API | Generates the sourced summary and optional semantic vectors. |
 | Optional cache | Redis | Caches academic search results; the core workflow works without it. |
 | Deployment | Docker on Render | Builds the frontend and runs the FastAPI app, which also serves the built website. |
@@ -143,5 +142,6 @@ The plan itself makes no AI call. Discovery prepares up to three arXiv searches;
 - `backend/main.py`: API routes, queued jobs, background worker, and follow-up chat.
 - `backend/research.py`: query rules, arXiv search, PDF chunking, embeddings, retrieval, LLM synthesis, and report assembly.
 - `backend/db.py`: database tables for papers, chunks, vectors, jobs, and messages.
-- `backend/storage.py`: private or local PDF storage.
+- `backend/history.py`: saves text history and removes temporary research data.
+- `backend/storage.py`: reads and removes legacy PDF files; new PDFs are not saved.
 - `backend/cache.py`: optional Redis cache.

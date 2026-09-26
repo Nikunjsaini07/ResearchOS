@@ -1,14 +1,9 @@
-"""Private PDF storage, with local files for development."""
+"""Read and remove legacy PDFs. New PDFs are processed in memory only."""
 import os
 from pathlib import Path
 from urllib.parse import quote
 
 import httpx
-from backend.db import DATA
-
-
-def remote_enabled():
-    return bool(os.getenv("SUPABASE_URL"))
 
 
 def remote_request(method, object_path, **kwargs):
@@ -24,18 +19,6 @@ def remote_request(method, object_path, **kwargs):
             return response
     except httpx.HTTPError:
         raise ValueError("PDF storage is unavailable. Check the private bucket and server storage settings.") from None
-
-
-def save_pdf(paper_id, raw):
-    if remote_enabled():
-        bucket = os.getenv("SUPABASE_STORAGE_BUCKET", "papers")
-        path = f"{bucket}/{paper_id}.pdf"
-        remote_request("POST", quote(path, safe="/"), content=raw,
-                       headers={"Content-Type": "application/pdf", "x-upsert": "true"})
-        return "supabase://" + path
-    path = DATA / f"{paper_id}.pdf"
-    path.write_bytes(raw)
-    return str(path)
 
 
 def read_pdf(reference):

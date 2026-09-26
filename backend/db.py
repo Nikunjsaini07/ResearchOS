@@ -83,6 +83,14 @@ class Paper(Base):
     file: Mapped[str] = mapped_column(Text, default="")
 
 
+class Workspace(Base):
+    """Short-lived retrieval workspace; historical projects have no workspace."""
+    __tablename__ = "workspaces"
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), primary_key=True)
+    expires: Mapped[float]
+    closed: Mapped[bool] = mapped_column(default=False)
+
+
 class Chunk(Base):
     __tablename__ = "chunks"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)

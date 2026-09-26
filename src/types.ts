@@ -18,6 +18,7 @@ export type Claim = {
   next_step?: string;
 };
 export type Project = {
+  readonly: boolean;
   id: string;
   title: string;
   question: string;
@@ -63,3 +64,4 @@ export type Message = {
   evidence: Evidence[];
 };
 export type User = { name: string; email: string };
+export type ProjectSummary = Pick<Project, "id" | "title" | "created">;

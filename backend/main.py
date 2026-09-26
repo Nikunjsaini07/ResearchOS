@@ -29,6 +29,7 @@ from backend.db import (
     Chunk,
     Job,
     Message,
+    Workspace,
     DATA,
 )
 from backend.research import (
@@ -42,7 +43,8 @@ from backend.research import (
     chunk_pdf,
 )
 import json
-from backend.storage import save_pdf, read_pdf, delete_pdf
+from backend.storage import read_pdf, delete_pdf
+from backend.history import WORKSPACE_TTL, close_project, cleanup_history
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("researchos")
@@ -50,9 +52,13 @@ stop = threading.Event()
 
 
 def worker():
+    next_cleanup = 0
     while not stop.wait(0.7):
         try:
             with Session() as db:
+                if time.time() >= next_cleanup:
+                    cleanup_history(db)
+                    next_cleanup = time.time() + 60
                 job = db.scalar(
                     select(Job).where(Job.status == "queued").order_by(Job.created)
                 )
@@ -86,6 +92,8 @@ def worker():
                             else "The research service could not complete this step. Check provider settings and retry."
                         )
                         db.commit()
+            with Session() as db:
+                cleanup_history(db)
         except Exception:
             log.exception("Worker polling failed")
 
@@ -102,10 +110,12 @@ async def lifespan(app):
             for table in Base.metadata.sorted_tables:
                 connection.execute(text(f'ALTER TABLE "{table.name}" ENABLE ROW LEVEL SECURITY'))
     with Session() as db:
+        db.execute(delete(AuthSession).where(AuthSession.expires < time.time()))
         for j in db.scalars(select(Job).where(Job.status == "running")):
             j.status = "failed"
             j.error = "The server restarted during this run. Retry the step."
         db.commit()
+        cleanup_history(db)
     stop.clear()
     thread = threading.Thread(target=worker, daemon=True)
     thread.start()
@@ -185,6 +195,15 @@ def project_for(db, pid, user):
     return p
 
 
+def active_project_for(db, pid, user):
+    project = project_for(db, pid, user)
+    workspace = db.get(Workspace, pid)
+    if not workspace or workspace.closed or workspace.expires <= time.time():
+        raise HTTPException(409, "Saved conversations are read-only. Start a new question.")
+    workspace.expires = time.time() + WORKSPACE_TTL
+    return project
+
+
 def idle(db, pid):
     if db.scalar(
         select(Job).where(Job.project_id == pid, Job.status.in_(["queued", "running"]))
@@ -202,8 +221,10 @@ def public(obj, exclude=()):
 
 def project_json(db, p):
     data = public(p, ("user_id",))
+    workspace = db.get(Workspace, p.id)
     papers = list(db.scalars(select(Paper).where(Paper.project_id == p.id)))
     data.update(
+        readonly=not workspace or workspace.closed or workspace.expires <= time.time(),
         paper_count=len(papers),
         indexed_count=sum(x.status == "indexed" for x in papers),
         finding_count=sum(len(x["claims"]) for x in p.analysis.get("papers", [])),
@@ -289,7 +310,9 @@ def guest(request: Request, response: Response, db=Depends(db_session)):
         else None
     )
     if session and session.expires > time.time():
-        return public(db.get(User, session.user_id), ("password",))
+        existing = db.get(User, session.user_id)
+        if existing:
+            return public(existing, ("password",))
     user = User(
         name="Curious mind",
         email=secrets.token_hex(16) + "@guest.local",
@@ -342,12 +365,20 @@ def claim_account(
 
 
 @app.post("/api/auth/login")
-def login(body: Credentials, response: Response, db=Depends(db_session)):
+def login(body: Credentials, request: Request, response: Response, db=Depends(db_session)):
     u = db.scalar(select(User).where(User.email == body.email.strip().lower()))
     if not u or not hmac.compare_digest(
         u.password, password_hash(body.password, u.password.split(":")[0])
     ):
         raise HTTPException(401, "Email or password is incorrect.")
+    token = request.cookies.get("researchos_session", "")
+    session = db.get(AuthSession, hashlib.sha256(token.encode()).hexdigest()) if token else None
+    guest_user = db.get(User, session.user_id) if session and session.expires > time.time() else None
+    if guest_user and guest_user.id != u.id and guest_user.email.endswith("@guest.local"):
+        db.execute(update(Project).where(Project.user_id == guest_user.id).values(user_id=u.id))
+        db.execute(delete(AuthSession).where(AuthSession.user_id == guest_user.id))
+        db.delete(guest_user)
+        db.commit()
     return login_cookie(db, u, response)
 
 
@@ -399,6 +430,22 @@ def projects(user=Depends(current_user), db=Depends(db_session)):
     ]
 
 
+@app.get("/api/projects/library")
+def project_library(user=Depends(current_user), db=Depends(db_session)):
+    return [
+        {
+            "id": pid,
+            "title": title,
+            "created": created,
+        }
+        for pid, title, created in db.execute(
+            select(Project.id, Project.title, Project.created)
+            .where(Project.user_id == user.id)
+            .order_by(Project.created.desc())
+        ).all()
+    ]
+
+
 @app.post("/api/projects", status_code=201)
 def create_project(
     body: NewProject, user=Depends(current_user), db=Depends(db_session)
@@ -409,6 +456,8 @@ def create_project(
         user_id=user.id, title=body.title.strip(), question=body.question.strip()
     )
     db.add(p)
+    db.flush()
+    db.add(Workspace(project_id=p.id, expires=time.time() + WORKSPACE_TTL))
     db.commit()
     return project_json(db, p)
 
@@ -416,6 +465,13 @@ def create_project(
 @app.get("/api/projects/{pid}")
 def get_project(pid: str, user=Depends(current_user), db=Depends(db_session)):
     return project_json(db, project_for(db, pid, user))
+
+
+@app.post("/api/projects/{pid}/archive")
+def archive(pid: str, user=Depends(current_user), db=Depends(db_session)):
+    p = project_for(db, pid, user)
+    close_project(db, p)
+    return project_json(db, p)
 
 
 @app.delete("/api/projects/{pid}")
@@ -427,7 +483,7 @@ def delete_project(pid: str, user=Depends(current_user), db=Depends(db_session))
         db.execute(delete(Chunk).where(Chunk.paper_id == paper.id))
         if paper.file:
             delete_pdf(paper.file)
-    for model in (Message, Job, Paper):
+    for model in (Message, Job, Paper, Workspace):
         db.execute(delete(model).where(model.project_id == pid))
     db.delete(p)
     db.commit()
@@ -438,7 +494,7 @@ def delete_project(pid: str, user=Depends(current_user), db=Depends(db_session))
 def edit_plan(
     pid: str, body: PlanEdit, user=Depends(current_user), db=Depends(db_session)
 ):
-    p = project_for(db, pid, user)
+    p = active_project_for(db, pid, user)
     idle(db, pid)
     if any(not q.strip() or len(q) > 300 for q in body.queries):
         raise HTTPException(422, "Queries must contain 1–300 characters.")
@@ -449,7 +505,7 @@ def edit_plan(
 
 @app.post("/api/projects/{pid}/run/{kind}", status_code=202)
 def run(pid: str, kind: str, user=Depends(current_user), db=Depends(db_session)):
-    p = project_for(db, pid, user)
+    p = active_project_for(db, pid, user)
     idle(db, pid)
     if kind not in WORKFLOWS:
         raise HTTPException(404, "Unknown research step.")
@@ -511,7 +567,7 @@ def select_paper(
     user=Depends(current_user),
     db=Depends(db_session),
 ):
-    project = project_for(db, pid, user)
+    project = active_project_for(db, pid, user)
     idle(db, pid)
     p = db.get(Paper, paper_id)
     if not p or p.project_id != pid:
@@ -529,7 +585,7 @@ def select_paper(
 async def upload(
     pid: str, file: UploadFile, user=Depends(current_user), db=Depends(db_session)
 ):
-    project = project_for(db, pid, user)
+    project = active_project_for(db, pid, user)
     idle(db, pid)
     raw = await file.read(25 * 1024 * 1024 + 1)
     if len(raw) > 25 * 1024 * 1024:
@@ -551,19 +607,18 @@ async def upload(
     )
     db.add(p)
     db.flush()
-    p.file = await __import__("asyncio").to_thread(save_pdf, p.id, raw)
     for chunk in chunks:
         db.add(Chunk(paper_id=p.id, **chunk))
     project.analysis = {}
     project.report = ""
     project.status = "indexed"
     db.commit()
-    return {**public(p, ("file",)), "has_pdf": True}
+    return {**public(p, ("file",)), "has_pdf": False}
 
 
 @app.get("/api/projects/{pid}/papers/{paper_id}/pdf")
 def pdf(pid: str, paper_id: str, user=Depends(current_user), db=Depends(db_session)):
-    project_for(db, pid, user)
+    active_project_for(db, pid, user)
     p = db.get(Paper, paper_id)
     if not p or p.project_id != pid or not p.file:
         raise HTTPException(404, "PDF is not available.")
@@ -574,7 +629,7 @@ def pdf(pid: str, paper_id: str, user=Depends(current_user), db=Depends(db_sessi
 
 @app.get("/api/projects/{pid}/evidence")
 def evidence(pid: str, q: str = "", user=Depends(current_user), db=Depends(db_session)):
-    project_for(db, pid, user)
+    active_project_for(db, pid, user)
     if q:
         return retrieve(db, pid, q, 30)
     from backend.research import evidence_dict
@@ -603,7 +658,7 @@ def messages(pid: str, user=Depends(current_user), db=Depends(db_session)):
 
 @app.post("/api/projects/{pid}/chat")
 def chat(pid: str, body: Question, user=Depends(current_user), db=Depends(db_session)):
-    project_for(db, pid, user)
+    active_project_for(db, pid, user)
     refs = retrieve(db, pid, body.content)
     if not refs:
         answer = "I could not find supporting evidence in your selected, indexed papers. Try a more specific question or add relevant papers."
@@ -637,6 +692,11 @@ def chat(pid: str, body: Question, user=Depends(current_user), db=Depends(db_ses
                 502,
                 "The AI provider could not answer. Check your settings and try again.",
             )
+    # A response already in flight may finish after the page closes; retain only its text.
+    db.expire_all()
+    workspace = db.get(Workspace, pid)
+    if not workspace or workspace.closed:
+        refs = []
     db.add(Message(project_id=pid, role="user", content=body.content))
     msg = Message(project_id=pid, role="assistant", content=answer, evidence=refs)
     db.add(msg)
@@ -648,7 +708,7 @@ def chat(pid: str, body: Question, user=Depends(current_user), db=Depends(db_ses
 def review(pid: str, body: Review, user=Depends(current_user), db=Depends(db_session)):
     from copy import deepcopy
 
-    p = project_for(db, pid, user)
+    p = active_project_for(db, pid, user)
     idle(db, pid)
     if body.status not in (
         "supported",

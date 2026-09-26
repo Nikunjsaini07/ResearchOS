@@ -2530,3 +2530,42 @@ textarea:focus-visible,
     box-shadow: none;
   }
 }
+
+/* Saved research and account controls follow the field notebook palette. */
+.history-list > button:hover { background: var(--surface-soft); padding-left: 10px; padding-right: 10px; }
+.history-list > button:focus-visible { outline-offset: -3px; }
+.history-list strong { color: var(--ink); font-weight: 600; font-size: 13px; }
+.history-list small { color: var(--muted); font-size: 11px; }
+.library-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 38px 20px; color: var(--muted); text-align: center; }
+.library-empty h3 { color: var(--ink); font-size: 16px; }
+.library-empty p { font-size: 12px; }
+.library-empty .button { margin-top: 8px; }
+.library-account-link { display: inline-flex; align-items: center; gap: 7px; margin-top: 20px; font-size: 12px; }
+.account-submit { min-width: 140px; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; }
+.account-switch { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+.account-switch button { color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.account-actions .quiet-button { display: inline-flex; align-items: center; gap: 7px; }
+.account-trigger { max-width: 190px; }
+.account-trigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.saved-conversation { max-width: 940px; }
+.saved-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 24px 28px; border-bottom: 1px solid var(--line); }
+.saved-heading h2 { font-size: 17px; }
+.saved-result { padding: 28px; color: var(--text-soft); font-size: 14px; line-height: 1.8; overflow-wrap: anywhere; }
+.saved-result h1 { font-size: 24px; margin-bottom: 24px; }
+.saved-result h2 { font-size: 18px; margin: 28px 0 12px; }
+.saved-result h3 { font-size: 16px; margin: 22px 0 10px; }
+.saved-result p + p { margin-top: 14px; }
+.saved-result > :first-child { margin-top: 0; }
+.saved-result pre { overflow-x: auto; }
+.saved-result table { display: block; overflow-x: auto; max-width: 100%; border-collapse: collapse; }
+.saved-result th, .saved-result td { padding: 10px; border: 1px solid var(--line); }
+.saved-note { padding: 22px 28px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+@media (max-width: 600px) {
+  .site-header nav { gap: 5px; }
+  .site-header .nav-button { padding: 9px; }
+  .site-header .nav-button span { display: none; }
+  .site-header .account-trigger span { display: block; max-width: 68px; }
+  .history-list > button { gap: 10px; }
+  .history-list strong { font-size: 12px; }
+  .saved-heading, .saved-result, .saved-note { padding: 20px; }
+}

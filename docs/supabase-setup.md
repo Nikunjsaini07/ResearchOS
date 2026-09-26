@@ -1,31 +1,32 @@
-# Render Free with Supabase
+# Render with Supabase PostgreSQL
 
-Create a free Supabase project. Keep its database password private.
+Only a persistent database is needed for accounts and text conversation history.
+New research does not require a Supabase Storage bucket.
 
-1. In Storage, create a **private** bucket named `papers` (Public bucket off).
-2. In Connect, choose the **Session pooler** connection string (port 5432).
-   Replace the password placeholder with your database password, URL-encoding
-   special characters. Add `?sslmode=require` if no query string is present.
+1. Create a Supabase project and keep its database password private.
+2. In Connect, choose the Session pooler connection string (port 5432).
+   Replace the password placeholder, URL-encoding special characters, and add
+   `?sslmode=require` if no query string is present.
 3. In Render Environment, set `DATABASE_URL` to that connection string.
-   The app accepts `postgresql://` and selects its installed psycopg driver.
-4. Set `SUPABASE_URL` to your project's HTTPS URL and
-   `SUPABASE_SERVICE_ROLE_KEY` to the legacy `service_role` key from Supabase's
-   API Keys settings. This key belongs only in Render, never the frontend or Git.
-5. Set `SUPABASE_STORAGE_BUCKET=papers`. Keep your AI provider values unchanged.
-6. Keep `COOKIE_SECURE=true` and `ALLOWED_ORIGINS` equal to your actual HTTPS site
-   origin. `DATA_DIR=/app/data` can remain for temporary local files.
-7. Save and deploy, then start a new question from the homepage.
+4. Set `COOKIE_SECURE=true` and `ALLOWED_ORIGINS` to the actual HTTPS site origin.
+   Keep your AI provider settings unchanged.
+5. Deploy and verify that a saved conversation remains readable after a restart.
 
-Use the database owner connection supplied by Supabase. At startup the app creates
-its tables and enables row-level security so public Data API clients cannot read
-them. FastAPI continues to authorize each project and PDF request using the app's
-existing sessions; the app does not use Supabase Auth.
+FastAPI creates its tables and enables row-level security to prevent public Data
+API access. Authentication uses the app's HTTP-only cookie, not Supabase Auth.
 
-This starts a new database. Existing SQLite research and PDFs are not migrated
-automatically. Data already erased by Render cannot be recovered by this change.
-Render Free can still sleep or restart, interrupting active research jobs; external
-storage preserves saved data, but does not make the worker continuously available.
+PDFs are discarded after extraction. Temporary passages and embeddings are
+removed when a conversation closes or expires. Saved history retains question,
+result, and conversation text only, and cannot be continued.
 
-After setup, verify a PDF upload, PDF viewing, and access to the same project after
-a redeployment in the same browser. Local request checks alone do not validate
-your Supabase credentials, database permissions, or network connectivity.
+## Upgrading an existing installation
+
+Existing research without an active workspace is converted to text history at
+startup. Keep `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and
+`SUPABASE_STORAGE_BUCKET` configured until legacy stored PDFs have been deleted.
+These credentials stay on the server. Cleanup retries when legacy storage is
+unavailable; new PDFs are never uploaded to that bucket.
+
+Switching from SQLite to Supabase still starts a separate database; it does not
+migrate old SQLite records automatically. An external database preserves text
+history through redeployments, but server restarts can still interrupt active jobs.

@@ -22,6 +22,10 @@ import {
   AlertCircle,
   Feather,
   Network,
+  History,
+  LogIn,
+  LogOut,
+  UserRound,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -34,6 +38,7 @@ import type {
   Job,
   Message,
   User,
+  ProjectSummary,
 } from "./types";
 
 // Research stages shown in the progress trail.
@@ -69,6 +74,7 @@ const steps = [
     verb: "Bringing it together",
   },
 ];
+const isGuest = (user: User | null) => !!user?.email.endsWith("@guest.local");
 function Brand() {
   return (
     <span className="brand">
@@ -178,8 +184,24 @@ export default function App() {
       free_only: boolean;
     } | null>(null),
     [activity, setActivity] = useState(false);
+  const [library, setLibrary] = useState<ProjectSummary[]>([]);
+  const [libraryBusy, setLibraryBusy] = useState(false);
+  const [libraryError, setLibraryError] = useState("");
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [authError, setAuthError] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null),
     routeRef = useRef(id);
+  const activeProjectRef = useRef<string | null>(null);
+  const historyRequests = useRef(new Set<string>());
+  const closeActive = async () => {
+    const pid = activeProjectRef.current;
+    activeProjectRef.current = null;
+    if (pid) {
+      await api("/projects/" + pid + "/archive", { ...post(), keepalive: true });
+      historyRequests.current.add(pid);
+    }
+  };
   useEffect(() => {
     try {
       if (question) localStorage.setItem("researchos:draftQuestion", question);
@@ -196,6 +218,8 @@ export default function App() {
   const stageIndex = steps.findIndex((s) => s.id === stage),
     finished = !running && !!project?.report;
   const navigate = (next: string | null) => {
+    if (activeProjectRef.current && activeProjectRef.current !== next) void closeActive().catch(() => {});
+    routeRef.current = next;
     location.hash = next ? "research/" + next : "";
     setId(next);
     setError("");
@@ -210,6 +234,10 @@ export default function App() {
   const load = useCallback(async (pid: string) => {
     let p: Project, ps: Paper[], js: Job[], ms: Message[];
     try {
+      if (activeProjectRef.current !== pid && !historyRequests.current.has(pid)) {
+        await api("/projects/" + pid + "/archive", post());
+        historyRequests.current.add(pid);
+      }
       [p, ps, js, ms] = await Promise.all([
         api<Project>("/projects/" + pid),
         api<Paper[]>("/projects/" + pid + "/papers"),
@@ -217,13 +245,20 @@ export default function App() {
         api<Message[]>("/projects/" + pid + "/messages"),
       ]);
     } catch (e) {
+      if (e instanceof ApiError && e.status === 401 && routeRef.current === pid) {
+        setUser(null);
+        setAuthMode("login");
+        setAuthError("Your session expired. Sign in to reopen research saved to your account.");
+        setModal("auth");
+        return;
+      }
       if (e instanceof ApiError && e.status === 404 && routeRef.current === pid) {
         location.hash = "";
         routeRef.current = null;
         setId(null);
         setProject(null);
         setJob(null);
-        setError("This guest workspace is no longer available. Start a new question.");
+        setError("This research is unavailable in the current account. Open your research library or start a new question.");
         return;
       }
       throw e;
@@ -246,7 +281,10 @@ export default function App() {
         } catch (e) {
           if (!(e instanceof ApiError) || e.status !== 401) throw e;
           if (location.hash.startsWith("#research/")) {
-            throw new ApiError("Your session expired. This guest workspace cannot be recovered; start a new question.", 401);
+            if (!active) return;
+            setAuthReady(true);
+            setError("Your session expired. Sign in to reopen research saved to your account.");
+            return;
           }
           u = await api<User>("/auth/guest", post());
         }
@@ -273,33 +311,97 @@ export default function App() {
     window.addEventListener("online", reconnect);
     const change = () => {
       const hash = location.hash;
-      setId(hash.startsWith("#research/") ? hash.slice(10) : null);
+      const next = hash.startsWith("#research/") ? hash.slice(10) : null;
+      if (activeProjectRef.current && activeProjectRef.current !== next) void closeActive().catch(() => {});
+      routeRef.current = next;
+      setId(next);
     };
+    const leave = () => { void closeActive().catch(() => {}); };
     window.addEventListener("hashchange", change);
+    window.addEventListener("pagehide", leave);
     return () => {
       active = false;
       window.clearTimeout(retry);
       window.removeEventListener("online", reconnect);
       window.removeEventListener("hashchange", change);
+      window.removeEventListener("pagehide", leave);
     };
   }, []);
   useEffect(() => {
-    if (id && authReady) load(id).catch((e) => setError(e instanceof ApiError && e.status < 500 ? e.message : connectionMessage));
-  }, [id, authReady, load]);
+    if (id && authReady && user) load(id).catch((e) => setError(e instanceof ApiError && e.status < 500 ? e.message : connectionMessage));
+  }, [id, authReady, user?.email, load]);
   useEffect(() => {
-    if (!id || !running) return;
+    if (!id || !running || !user) return;
     const timer = setInterval(
       () => load(id).catch((e) => setError(e instanceof ApiError && e.status < 500 ? e.message : connectionMessage)),
       1500,
     );
     return () => clearInterval(timer);
-  }, [id, running, load]);
+  }, [id, running, user?.email, load]);
   useEffect(() => {
-    if (!id || !authReady) return;
+    if (!id || !authReady || !user) return;
     const reconnect = () => load(id).catch((e) => setError((e as Error).message));
     window.addEventListener("online", reconnect);
     return () => window.removeEventListener("online", reconnect);
-  }, [id, authReady, load]);
+  }, [id, authReady, user?.email, load]);
+  const openLibrary = async () => {
+    if (!user) {
+      setAuthMode("login");
+      setModal("auth");
+      return;
+    }
+    setModal("library");
+    setLibraryBusy(true);
+    setLibraryError("");
+    setError("");
+    try {
+      setLibrary(await api<ProjectSummary[]>("/projects/library"));
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) {
+        setUser(null);
+        setAuthMode("login");
+        setAuthError("Your session expired. Sign in to open your research library.");
+        setModal("auth");
+      } else {
+        setLibraryError((e as Error).message);
+      }
+    } finally {
+      setLibraryBusy(false);
+    }
+  };
+  const submitAuth = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const credentials = {
+      name: String(data.get("name") || "Researcher"),
+      email: String(data.get("email") || "").trim(),
+      password: String(data.get("password") || ""),
+    };
+    setAuthBusy(true);
+    setAuthError("");
+    try {
+      const endpoint = authMode === "login" ? "login" : isGuest(user) ? "claim" : "register";
+      const next = await api<User>("/auth/" + endpoint, post(credentials));
+      setUser(next);
+      setError("");
+      setModal("");
+      api("/settings").then(setConfig).catch(() => {});
+    } catch (e) {
+      setAuthError((e as Error).message);
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+  const signOut = () => action("logout", async () => {
+    await closeActive();
+    await api("/auth/logout", post());
+    setUser(null);
+    setLibrary([]);
+    setQuestion("");
+    setAttachment(null);
+    setModal("");
+    navigate(null);
+  });
   // Give every asynchronous action the same loading and error handling.
   async function action(name: string, fn: () => Promise<void>) {
     setBusy(name);
@@ -307,7 +409,14 @@ export default function App() {
     try {
       await fn();
     } catch (e) {
-      setError((e as Error).message);
+      if (e instanceof ApiError && e.status === 401) {
+        setUser(null);
+        setAuthMode("login");
+        setAuthError("Your session expired. Sign in to continue.");
+        setModal("auth");
+      } else {
+        setError((e as Error).message);
+      }
     } finally {
       setBusy("");
     }
@@ -331,6 +440,7 @@ export default function App() {
         }),
       );
       navigate(p.id);
+      activeProjectRef.current = p.id;
       routeRef.current = p.id;
       if (attachment) {
         const form = new FormData();
@@ -388,9 +498,24 @@ export default function App() {
         </button>
         <nav>
           {id && (
-            <button className="nav-button" onClick={() => navigate(null)}>
+            <button className="nav-button" onClick={() => navigate(null)} aria-label="New question">
               <Plus size={16} />
               <span>New question</span>
+            </button>
+          )}
+          <button className="nav-button" onClick={openLibrary} aria-label="Open saved research">
+            <History size={16} />
+            <span>Conversation history</span>
+          </button>
+          {user && !isGuest(user) ? (
+            <button className="nav-button account-trigger" onClick={() => setModal("account")} aria-label="Your account">
+              <UserRound size={16} />
+              <span>{user.name}</span>
+            </button>
+          ) : (
+            <button className="nav-button account-trigger" onClick={() => { setAuthMode("login"); setAuthError(""); setModal("auth"); }} aria-label="Sign in">
+              <LogIn size={16} />
+              <span>Sign in</span>
             </button>
           )}
         </nav>
@@ -495,6 +620,26 @@ export default function App() {
               e.target.value = "";
             }}
           />
+        </main>
+      ) : !project ? (
+        <main className="research-shell"><div className="library-empty" role="status">
+          {authReady && !user ? "Sign in to read your saved conversation." : <><Loader2 className="spin" size={22} /> Loading conversation…</>}
+        </div></main>
+      ) : project.readonly ? (
+        <main className="research-shell saved-conversation">
+          <div className="research-title">
+            <div><span className="eyebrow">CONVERSATION HISTORY · {new Date(project.created).toLocaleDateString()}</span><h1>{project.question}</h1></div>
+            <span className="run-badge">Read only</span>
+          </div>
+          <section className="answer-panel">
+            <div className="saved-heading"><h2>Saved result</h2>{project.report && <a href={"/api/projects/" + id + "/export"} aria-label="Download saved result"><Download size={18} /></a>}</div>
+            <div className="saved-result">
+              {running ? <p role="status"><Loader2 size={16} className="spin" /> Research is finishing. Its result will appear here.</p> : <ReactMarkdown remarkPlugins={[remarkGfm]}>{project.report || "This conversation ended before a result was generated."}</ReactMarkdown>}
+            </div>
+            {!!messages.length && <div className="conversation">{messages.map((message) => <div className={"message " + message.role} key={message.id}><span>{message.role === "user" ? "You" : "ResearchOS"}</span><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div>)}</div>}
+            <p className="saved-note">This is a record of the conversation and result. Start a new question to research further.</p>
+          </section>
+          <button className="quiet-button delete-project" disabled={running || !!busy} onClick={() => setModal("delete-project")}>Delete this conversation</button>
         </main>
       ) : (
         <main className="research-shell">
@@ -993,9 +1138,93 @@ export default function App() {
           </div>
         </main>
       )}
+      {modal === "library" && (
+        <Modal title="Conversation history" close={() => setModal("")} wide>
+          <p className="modal-description">
+            {isGuest(user)
+              ? "Your past questions and results, saved as text. Create an account to read them on another device."
+              : "Read your past questions, results, and conversations. Saved sessions are read-only."}
+          </p>
+          {libraryBusy ? (
+            <div className="library-empty"><Loader2 className="spin" size={20} /> Loading your research…</div>
+          ) : libraryError ? (
+            <div className="library-empty" role="alert">
+              <AlertCircle size={23} />
+              <h3>Conversation history unavailable</h3>
+              <p>{libraryError}</p>
+              <button className="button" onClick={openLibrary}>Try again</button>
+            </div>
+          ) : library.length ? (
+            <div className="history-list">
+              {library.map((item) => (
+                <button key={item.id} disabled={!!busy} onClick={() => action("history", async () => { await closeActive(); await api("/projects/" + item.id + "/archive", post()); historyRequests.current.add(item.id); setModal(""); navigate(item.id); await load(item.id); })}>
+                  <span><BookOpen size={17} /></span>
+                  <div>
+                    <strong>{item.title}</strong>
+                    <small>{new Date(item.created).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}</small>
+                  </div>
+                  <ChevronRight size={16} />
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="library-empty">
+              <BookOpen size={24} />
+              <h3>No research saved yet</h3>
+              <p>Ask a question to start your first research workspace.</p>
+              <button className="button" onClick={() => { setModal(""); navigate(null); }}>Start a question</button>
+            </div>
+          )}
+          {isGuest(user) && !libraryBusy && (
+            <button className="quiet-button library-account-link" onClick={() => { setAuthMode("register"); setAuthError(""); setModal("auth"); }}>
+              Create an account to keep this research
+              <ArrowUpRight size={15} />
+            </button>
+          )}
+        </Modal>
+      )}
+      {modal === "auth" && (
+        <Modal title={authMode === "login" ? "Sign in" : "Create your account"} close={() => setModal("")}>
+          <p className="modal-description">
+            {authMode === "login"
+              ? "Read your conversation history on any device. Guest conversations in this browser will join your account."
+              : "Keep your questions, conversations, and result text in one place."}
+          </p>
+          <form className="account-form" onSubmit={submitAuth}>
+            {authMode === "register" && (
+              <label>Your name<input name="name" autoComplete="name" required maxLength={100} placeholder="Your name" /></label>
+            )}
+            <label>Email<input name="email" type="email" autoComplete="email" required maxLength={254} placeholder="you@example.com" /></label>
+            <label>Password<input name="password" type="password" autoComplete={authMode === "login" ? "current-password" : "new-password"} required minLength={8} maxLength={256} placeholder="At least 8 characters" /></label>
+            {authError && <p className="form-error" role="alert">{authError}</p>}
+            <button className="button account-submit" disabled={authBusy}>
+              {authBusy ? <Loader2 size={16} className="spin" /> : authMode === "login" ? "Sign in" : "Create account"}
+            </button>
+          </form>
+          <div className="account-switch">
+            {authMode === "login" ? "New to ResearchOS?" : "Already have an account?"}
+            <button onClick={() => { setAuthMode(authMode === "login" ? "register" : "login"); setAuthError(""); }}>
+              {authMode === "login" ? "Create an account" : "Sign in"}
+            </button>
+          </div>
+        </Modal>
+      )}
+      {modal === "account" && user && !isGuest(user) && (
+        <Modal title="Your account" close={() => setModal("")}>
+          <div className="settings-intro">
+            <span><UserRound size={19} /></span>
+            <div><h3>{user.name}</h3><p>{user.email}</p></div>
+          </div>
+          <p className="session-note">Your conversation history is saved as text. This browser stays signed in for up to 30 days.</p>
+          <div className="account-actions">
+            <button className="quiet-button" onClick={openLibrary}><History size={15} /> Conversation history</button>
+            <button className="quiet-button" disabled={!!busy} onClick={signOut}><LogOut size={15} /> Sign out</button>
+          </div>
+        </Modal>
+      )}
       {modal === "delete-project" && (
         <Modal title="Delete this research?" close={() => setModal("")}>
-          <p className="modal-description">This permanently removes this project, its uploaded PDFs, findings, and conversation.</p>
+          <p className="modal-description">This permanently removes the question, saved result, and conversation.</p>
           <div className="workspace-tools">
             <button className="quiet-button" onClick={() => setModal("")}>Keep research</button>
             <button className="button" disabled={!!busy} onClick={() => action("delete", async () => {
@@ -1060,8 +1289,8 @@ export default function App() {
             )}
             <blockquote>{source.text}</blockquote>
             <p className="evidence-note">
-              {source.has_pdf
-                ? "An extracted paper passage. Open the PDF for its full context."
+              {source.page > 0
+                ? "An extracted paper passage. PDFs are discarded after reading; refer to the original publication for full context."
                 : "The paper abstract. Open the original source for its full context."}
             </p>
             <div className="source-links">

@@ -1,7 +1,7 @@
 import json
 import logging
 from html import unescape
-from backend.storage import save_pdf, read_pdf
+from backend.storage import read_pdf, delete_pdf
 import math
 import os
 import re
@@ -471,10 +471,13 @@ def ingest_node(state):
             try:
                 raw=read_pdf(p.file) if p.file else download_pdf(p.pdf_url)
                 chunks=chunk_pdf(raw); vectors=[[] for _ in chunks]
+                del raw
                 if embeddings_enabled() and (configured() or os.getenv('EMBEDDING_API_KEY')):
                     try: vectors=embed([c['text'] for c in chunks])
                     except Exception: event(state['job_id'],'Embedding provider unavailable; keyword retrieval remains available.',int(index/max(1,len(papers))*80))
-                p.file=save_pdf(p.id, raw)
+                if p.file:
+                    delete_pdf(p.file)
+                    p.file=''
                 db.execute(delete(Chunk).where(Chunk.paper_id==p.id))
                 for c,v in zip(chunks,vectors): db.add(Chunk(paper_id=p.id,embedding=v or None,**c))
                 p.status='indexed'; p.error=''; good+=1; db.commit()
@@ -650,7 +653,7 @@ def analysis_node(state):
         for paper in papers:
             claims=[c for c in findings if {lookup[s['id']]['paper_id'] for s in c['sources']}=={paper.id}]
             analyses.append({'paper_id':paper.id,'title':paper.title,'claims':claims})
-        note='AI summary based on the selected papers. Source links open the supporting PDF passage or abstract; review important claims in the original paper.'
+        note='AI summary based on the selected papers. Review important claims in the original publication.'
         if fallback_note: note=fallback_note
         elif overview and not overview[0]['sources']: note='AI summary generated, but the model did not map it to specific passages. Review the Sources tab before relying on it.'
         project.analysis={'overview':overview,'findings':findings,'papers':analyses,'gaps':gaps,
@@ -692,7 +695,7 @@ def report_node(state):
         lines.extend(['## Limitations','This is an AI synthesis of selected PDF passages or paper abstracts, not an exhaustive systematic review. Source links and interpretation require review in the original papers. No claim of global research novelty is made.','## References'])
         for key,num in refs.items():
             e=evidence[key]; location=f"p. {e['page']}" if e['page'] else 'abstract'
-            lines.append(f"{num}. {e['title']} — {e['section']}, {location}. Evidence ID: {key}.")
+            lines.append(f"{num}. {e['title']} — {e['section']}, {location}. {e.get('url', '')}")
         p.report='\n\n'.join(lines); p.status='completed'; db.commit()
     event(state['job_id'],'Evidence-backed report generated.',100)
     return state
