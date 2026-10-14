@@ -16,6 +16,10 @@ export type Claim = {
   status: string;
   rationale?: string;
   next_step?: string;
+  kind?: "source_gap" | "source_limitation";
+  gap?: string;
+  comparison?: string;
+  measure?: string;
 };
 export type Project = {
   readonly: boolean;

@@ -30,6 +30,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api, post, ApiError } from "./api";
+import { ResearchGaps } from "./ResearchGaps";
 import type {
   Evidence,
   Claim,
@@ -759,7 +760,7 @@ export default function App() {
           <div className="result-layout">
             <section className="answer-panel">
               <div className="answer-tabs">
-                {["Answer", "Compare", "Sources", "Research gaps"].map((t) => (
+                {["Answer", "Sources", "Research gaps"].map((t) => (
                   <button
                     key={t}
                     className={tab === t ? "active" : ""}
@@ -905,23 +906,6 @@ export default function App() {
                     </div>
                   )}
                 </div>
-              ) : tab === "Compare" ? (
-                <div className="comparison-panel">
-                  <p className="comparison-note">Compare reported evidence. Different datasets and evaluation methods may make results incomparable.</p>
-                  {project?.analysis.papers?.length ? (
-                    <div className="comparison-scroll" tabIndex={0} role="region" aria-label="Paper comparison">
-                      <table className="comparison-table">
-                        <thead><tr><th scope="col">Evidence</th>{project.analysis.papers.map(p => <th scope="col" key={p.paper_id}>{p.title}</th>)}</tr></thead>
-                        <tbody>{["Method", "Dataset", "Results", "Limitations"].map(dimension => (
-                          <tr key={dimension}><th scope="row">{dimension}</th>{project.analysis.papers!.map(p => {
-                            const claims = p.claims.filter(c => c.status !== "unsupported" && c.dimension.toLowerCase().replace(/s$/, "") === dimension.toLowerCase().replace(/s$/, ""));
-                            return <td key={p.paper_id}>{claims.length ? claims.map((c, i) => <p key={i}>{c.text}{citations(c)}</p>) : <span className="not-reported">Not reported in extracted findings</span>}</td>;
-                          })}</tr>
-                        ))}</tbody>
-                      </table>
-                    </div>
-                  ) : <div className="empty-state"><BookOpen size={30}/><h2>Evidence comes first.</h2><p>Analyze your selected papers to compare their findings here.</p></div>}
-                </div>
               ) : tab === "Sources" ? (
                 <div className="sources-list">
                   <div className="workspace-tools">
@@ -1002,41 +986,16 @@ export default function App() {
                   )}
                 </div>
               ) : (
-                <div className="gaps-list">
-                  {project?.analysis.gaps?.length ? (
-                    project.analysis.gaps.map((c, i) => (
-                      <article key={i}>
-                        <span className="gap-leaf">
-                          <Leaf size={22} />
-                        </span>
-                        <div>
-                          <span className="eyebrow">RESEARCH DIRECTION {i + 1}</span>
-                          <h3 className="gap-question">{c.text}</h3>
-                          {c.rationale && <p>{c.rationale}{citations(c)}</p>}
-                          {c.next_step && <p><strong>How to investigate:</strong> {c.next_step}</p>}
-                        </div>
-                      </article>
-                    ))
-                  ) : (
-                    <div className="empty-state">
-                      <Leaf size={30} />
-                      <h2>{project?.analysis.gap_status === "unavailable" ? "Research directions unavailable" : "More evidence needed"}</h2>
-                      <p>
-                        {project?.analysis.gap_note || (config?.ai_configured
-                          ? "The selected passages did not support a specific research direction. Try adding more relevant papers or a full-text PDF."
-                          : "No synthesized research gaps are available for this run.")}
-                      </p>
-                      {project?.analysis.gap_status === "unavailable" && (
-                        <button className="button" disabled={running || !!busy || !papers.some(p => p.selected)} onClick={() => runStep("refine")}>Retry answer and research directions</button>
-                      )}
-                    </div>
-                  )}
-                  {!!project?.analysis.gaps?.length && <p className="gap-note">
-                    {project?.analysis.gaps?.length ? project.analysis.gap_note : ""}
-                    {" "}Possible directions within these papers, not claims that no
-                    one has studied them.
-                  </p>}
-                </div>
+                <ResearchGaps
+                  claims={project?.analysis.gaps || []}
+                  evidence={project?.analysis.evidence || []}
+                  status={project?.analysis.gap_status}
+                  note={project?.analysis.gap_note}
+                  busy={running || !!busy}
+                  canRetry={papers.some(p => p.selected)}
+                  onRetry={() => runStep("refine")}
+                  onOpen={showSource}
+                />
               )}
               {messages.length > 0 && (
                 <div className="conversation">
