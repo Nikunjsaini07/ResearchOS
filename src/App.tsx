@@ -685,7 +685,8 @@ export default function App() {
             </div>
             <div className="trail">
               {steps.map((s, i) => {
-                const done = finished || (running && i < stageIndex) || (!running && !!project?.analysis.papers && i < 4),
+                const stopped = job?.status === "failed" && i === stageIndex,
+                  done = finished || ((running || job?.status === "failed") && i < stageIndex) || (!running && !!project?.analysis.papers && i < 4),
                   current = running && i === stageIndex;
                 return (
                   <React.Fragment key={s.id}>
@@ -711,7 +712,7 @@ export default function App() {
                       </span>
                       <strong>{s.label}</strong>
                       <small>
-                        {done ? "All done" : current ? "On it…" : "Up next"}
+                        {stopped ? "Stopped here" : done ? "All done" : current ? "On it…" : "Up next"}
                       </small>
                     </div>
                   </React.Fragment>
@@ -1019,18 +1020,22 @@ export default function App() {
                   ) : (
                     <div className="empty-state">
                       <Leaf size={30} />
-                      <h2>There’s always more to explore.</h2>
+                      <h2>{project?.analysis.gap_status === "unavailable" ? "Research directions unavailable" : "More evidence needed"}</h2>
                       <p>
-                        {config?.ai_configured
+                        {project?.analysis.gap_note || (config?.ai_configured
                           ? "The selected passages did not support a specific research direction. Try adding more relevant papers or a full-text PDF."
-                          : "No synthesized research gaps are available for this run."}
+                          : "No synthesized research gaps are available for this run.")}
                       </p>
+                      {project?.analysis.gap_status === "unavailable" && (
+                        <button className="button" disabled={running || !!busy || !papers.some(p => p.selected)} onClick={() => runStep("refine")}>Retry answer and research directions</button>
+                      )}
                     </div>
                   )}
-                  <p className="gap-note">
-                    Possible directions within these papers, not claims that no
+                  {!!project?.analysis.gaps?.length && <p className="gap-note">
+                    {project?.analysis.gaps?.length ? project.analysis.gap_note : ""}
+                    {" "}Possible directions within these papers, not claims that no
                     one has studied them.
-                  </p>
+                  </p>}
                 </div>
               )}
               {messages.length > 0 && (
@@ -1116,7 +1121,9 @@ export default function App() {
               </div>
               {project?.plan.queries && (
                 <div className="search-notes">
-                  <span className="eyebrow">TRAILS WE’RE FOLLOWING</span>
+                  <span className="eyebrow">SEARCH PLAN</span>
+                  {project.plan.scope && <p>{project.plan.scope}</p>}
+                  {(project.plan.warning || project.plan.ranking_warning) && <p role="status">{project.plan.warning || project.plan.ranking_warning}</p>}
                   <form key={project.plan.queries.join("|")} onSubmit={e => {
                     e.preventDefault();
                     const data = new FormData(e.currentTarget);

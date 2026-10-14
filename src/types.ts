@@ -29,13 +29,15 @@ export type Project = {
   analysis: {
     mode?: string;
     note?: string;
+    gap_status?: string;
+    gap_note?: string;
     overview?: Claim[];
     findings?: Claim[];
     papers?: { paper_id: string; title: string; claims: Claim[] }[];
     gaps?: Claim[];
     evidence?: Evidence[];
   };
-  plan: { queries?: string[] };
+  plan: { queries?: string[]; scope?: string; warning?: string; ranking_warning?: string; coverage_note?: string; mode?: string };
 };
 export type Paper = {
   id: string;

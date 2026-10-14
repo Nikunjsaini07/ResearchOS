@@ -8,9 +8,9 @@
 
 Start with a question such as *“How do neural networks classify images?”* and optionally attach a PDF. ResearchOS then:
 
-1. **Plans searches.** Python rules turn meaningful words in the question into up to three search queries. This stage does **not** use an LLM.
-2. **Finds papers.** It searches arXiv, removes duplicates, ranks title and abstract relevance, and automatically selects up to six papers. If you attached a PDF, the run uses the uploaded corpus instead.
-3. **Reads sources.** It extracts text from the selected PDFs, divides it into page-linked passages, and optionally creates embedding vectors for later retrieval. If an arXiv PDF is unavailable, its abstract may be used and is labeled as such.
+1. **Plans searches.** An AI planner translates the full question into up to three complementary academic queries and two broader alternatives. Keyword rules provide a fallback if AI is unavailable.
+2. **Finds papers.** It translates questions into academic terms with AI (with a keyword fallback), searches arXiv and OpenAlex, removes duplicates, ranks relevance to the full question, and selects up to six papers. One broader search is attempted when fewer than three useful matches are found. If you attached a PDF, the run uses the uploaded corpus instead.
+3. **Reads sources.** It extracts text from the selected PDFs, divides it into page-linked passages, and optionally creates embedding vectors for later retrieval. When full text is unavailable, arXiv or OpenAlex abstracts may be used and are labeled as such. Only allowed arXiv PDF URLs are downloaded.
 4. **Writes an answer and suggests next questions.** It sends relevant passages with your *full original question* to the configured LLM for a direct answer and supporting points. A separate call inspects limitations and conclusions to suggest up to three source-backed research directions, each with a practical next step.
 5. **Builds a review.** It assembles the answer, findings, search method, limitations, and references into a downloadable Markdown report. This formatting step does not make another LLM call.
 
@@ -95,9 +95,15 @@ To follow one question through the code, start at `begin` in `src/App.tsx`, then
 
 ## Current limits
 
-- This is a **focused review**, not an exhaustive systematic search. Automatic discovery starts with arXiv and selects at most six papers; users can adjust the selection, up to 20 per run.
+- This is a **focused review**, not an exhaustive systematic search. Automatic discovery searches arXiv and OpenAlex and selects at most six papers; users can adjust the selection, up to 20 per run.
 - The first answer sees sampled excerpts, not entire PDFs. It can miss a relevant result elsewhere in a paper.
 - Scanned PDFs need OCR before text can be extracted. Uploads are limited to 25 MB and 300 pages.
 - A linked passage supports inspection, not automatic scientific verification. Check important claims in the original paper.
 - Research directions are suggestions grounded in quoted passages from this small corpus. They are not proof that a topic is unstudied; inspect the cited papers and search more widely before treating one as a gap.
 - External search and AI providers may be unavailable or rate-limit requests. An interrupted server-side job can be retried.
+
+### Search configuration
+
+`OPENALEX_API_KEY` is optional and increases the provider budget. Search uses at most three initial queries and two broader alternatives per provider. AI planning and relevance ranking use up to two model attempts per phase; unavailable or malformed responses fall back to lexical search. These calls consume the configured AI provider quota. Search metadata caching expires after one hour. No additional permanent research storage or PDF storage is introduced.
+
+Research directions run independently of the answer. If AI generation fails, explicit author-stated limitations can be extracted with exact source quotes. The UI distinguishes provider failure from insufficient evidence. Partial search matches can produce a qualified answer; unrelated results still stop the review. Free AI provider quotas and missing full text can limit completion.
