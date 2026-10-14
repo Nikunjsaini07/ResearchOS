@@ -20,13 +20,13 @@ def result_text(project):
     for title, claims in (
         ("Answer", analysis.get("overview", [])),
         ("Findings", analysis.get("findings") or [c for p in analysis.get("papers", []) for c in p.get("claims", [])]),
-        ("Research directions", analysis.get("gaps", [])),
+        ("Research gaps and source limitations", analysis.get("gaps", [])),
     ):
         if claims:
             lines.append("## " + title)
             for claim in claims:
                 lines.append(claim.get("text", ""))
-                lines.extend(claim[key] for key in ("rationale", "next_step") if claim.get(key))
+                lines.extend(claim[key] for key in ("gap", "rationale", "next_step", "comparison", "measure") if claim.get(key))
     if analysis.get("note"):
         lines.append(analysis["note"])
     return "\n\n".join(lines) or "This conversation ended before a result was generated."
