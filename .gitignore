@@ -15,3 +15,7 @@ docs/reference/*.html
 
 # Personal reference material stays local.
 docs/reference/
+
+# Local-only tests and unused artwork
+/tests/
+/public/

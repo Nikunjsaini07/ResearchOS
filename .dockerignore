@@ -12,3 +12,7 @@ playwright-report
 *.db
 docs/reference
 artwork/source
+
+# Local-only tests and unused artwork
+/tests/
+/public/
