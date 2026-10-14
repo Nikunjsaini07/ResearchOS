@@ -413,7 +413,7 @@ def settings(user=Depends(current_user)):
         "model": os.getenv("LLM_MODEL", "gpt-4.1-mini"),
         "embeddings_configured": embeddings_enabled() and bool(os.getenv("EMBEDDING_API_KEY") or configured()),
         "database": "PostgreSQL" if "postgres" in str(engine.url) else "SQLite",
-        "search_source": "arXiv",
+        "search_source": "arXiv + OpenAlex",
         "max_pdf_mb": 25,
     }
 
@@ -498,7 +498,8 @@ def edit_plan(
     idle(db, pid)
     if any(not q.strip() or len(q) > 300 for q in body.queries):
         raise HTTPException(422, "Queries must contain 1–300 characters.")
-    p.plan = {**p.plan, "queries": [q.strip() for q in body.queries]}
+    p.plan = {**p.plan, "queries": [q.strip() for q in body.queries],
+              "retry_queries": list(dict.fromkeys(" ".join(q.split()[:2]) for q in body.queries)), "mode": "edited", "concepts": [], "scope": p.question}
     db.commit()
     return p.plan
 
