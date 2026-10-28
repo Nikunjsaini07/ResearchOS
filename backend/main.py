@@ -8,15 +8,17 @@ import re
 import secrets
 import threading
 import time
+from typing import Optional, Dict, Any, List
 from contextlib import asynccontextmanager
 from pathlib import Path
 from collections import defaultdict, deque
-from fastapi import FastAPI, HTTPException, Request, Response, Depends, UploadFile
+from fastapi import FastAPI, HTTPException, Request, Response, Depends, UploadFile, Form
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import select, delete, func, update, text
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.exc import IntegrityError
 from backend.db import (
     Base,
@@ -45,6 +47,13 @@ from backend.research import (
 import json
 from backend.storage import read_pdf, delete_pdf
 from backend.history import WORKSPACE_TTL, close_project, cleanup_history
+from backend.ideator import (
+    generate_thesis_proposals,
+    refine_proposal_chat,
+    generate_export_markdown,
+    prepare_paper_context,
+    SAMPLE_PROPOSALS,
+)
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("researchos")
@@ -174,34 +183,40 @@ def db_session():
 
 
 def current_user(request: Request, db=Depends(db_session)):
-    token = request.cookies.get("researchos_session", "")
-    session = (
-        db.get(AuthSession, hashlib.sha256(token.encode()).hexdigest())
-        if token
-        else None
-    )
-    if not session or session.expires < time.time():
-        raise HTTPException(401, "Please sign in to continue.")
-    user = db.get(User, session.user_id)
+    user = db.get(User, "default_user")
     if not user:
-        raise HTTPException(401, "Please sign in again.")
+        user = User(
+            id="default_user",
+            name="Researcher",
+            email="researcher@local",
+            password="none",
+        )
+        db.add(user)
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            user = db.get(User, "default_user")
     return user
 
 
-def project_for(db, pid, user):
+def project_for(db, pid, user=None):
     p = db.get(Project, pid)
-    if not p or p.user_id != user.id:
-        raise HTTPException(404, "Research project not found.")
+    if not p:
+        p = Project(
+            id=pid,
+            user_id="default_user",
+            title="Research Workspace",
+            question="Thesis & Project Ideator",
+            status="ready",
+        )
+        db.add(p)
+        db.commit()
     return p
 
 
-def active_project_for(db, pid, user):
-    project = project_for(db, pid, user)
-    workspace = db.get(Workspace, pid)
-    if not workspace or workspace.closed or workspace.expires <= time.time():
-        raise HTTPException(409, "Saved conversations are read-only. Start a new question.")
-    workspace.expires = time.time() + WORKSPACE_TTL
-    return project
+def active_project_for(db, pid, user=None):
+    return project_for(db, pid, user)
 
 
 def idle(db, pid):
@@ -259,6 +274,16 @@ class Review(BaseModel):
     text: str = Field(min_length=1, max_length=3000)
     source_ids: list[str] = Field(min_length=1, max_length=30)
     status: str
+
+
+class IdeateRequest(BaseModel):
+    sample: str | None = None
+    focus: str | None = None
+
+
+class RefineRequest(BaseModel):
+    proposal_id: str
+    message: str = Field(min_length=1, max_length=3000)
 
 
 def password_hash(password, salt=None):
@@ -446,6 +471,40 @@ def project_library(user=Depends(current_user), db=Depends(db_session)):
     ]
 
 
+@app.get("/api/projects/current")
+def get_current_project(user=Depends(current_user), db=Depends(db_session)):
+    p = db.scalar(
+        select(Project)
+        .order_by(Project.created.desc())
+        .limit(1)
+    )
+    if not p:
+        p = Project(
+            id=uid(),
+            user_id="default_user",
+            title="Research Workspace",
+            question="Thesis & Project Ideator",
+            status="ready",
+        )
+        db.add(p)
+        db.commit()
+    return project_json(db, p)
+
+
+@app.post("/api/projects/reset")
+def reset_project(user=Depends(current_user), db=Depends(db_session)):
+    p = Project(
+        id=uid(),
+        user_id="default_user",
+        title="Research Workspace",
+        question="Thesis & Project Ideator",
+        status="ready",
+    )
+    db.add(p)
+    db.commit()
+    return project_json(db, p)
+
+
 @app.post("/api/projects", status_code=201)
 def create_project(
     body: NewProject, user=Depends(current_user), db=Depends(db_session)
@@ -584,7 +643,11 @@ def select_paper(
 
 @app.post("/api/projects/{pid}/upload", status_code=201)
 async def upload(
-    pid: str, file: UploadFile, user=Depends(current_user), db=Depends(db_session)
+    pid: str,
+    file: UploadFile,
+    focus: Optional[str] = Form(None),
+    user=Depends(current_user),
+    db=Depends(db_session),
 ):
     project = active_project_for(db, pid, user)
     idle(db, pid)
@@ -598,6 +661,8 @@ async def upload(
             422, str(exc) if isinstance(exc, ValueError) else "Unable to read this PDF."
         )
     filename = Path(file.filename or "Uploaded paper.pdf").stem
+    # Deselect previous papers so this upload is primary
+    db.execute(update(Paper).where(Paper.project_id == pid).values(selected=False))
     p = Paper(
         project_id=pid,
         title=filename[:300],
@@ -610,11 +675,179 @@ async def upload(
     db.flush()
     for chunk in chunks:
         db.add(Chunk(paper_id=p.id, **chunk))
-    project.analysis = {}
+    chunk_dicts = [{"page": c["page"], "section": c["section"], "text": c["text"]} for c in chunks]
+    context = prepare_paper_context(chunk_dicts)
+    try:
+        user_focus = (focus or "").strip() or project.question
+        ideator_result = await __import__("asyncio").to_thread(
+            generate_thesis_proposals, context, filename, user_focus
+        )
+        project.analysis = {**project.analysis, "ideator": ideator_result}
+        flag_modified(project, "analysis")
+        project.status = "ideated"
+    except Exception as exc:
+        log.warning("Could not auto-generate ideation on upload: %s", exc)
+        project.analysis = {}
+        project.status = "indexed"
     project.report = ""
-    project.status = "indexed"
     db.commit()
     return {**public(p, ("file",)), "has_pdf": False}
+
+
+@app.post("/api/projects/{pid}/ideate")
+async def ideate(
+    pid: str,
+    body: IdeateRequest = IdeateRequest(),
+    user=Depends(current_user),
+    db=Depends(db_session),
+):
+    project = active_project_for(db, pid, user)
+    idle(db, pid)
+
+    if body.sample and body.sample in SAMPLE_PROPOSALS:
+        sample_data = SAMPLE_PROPOSALS[body.sample].copy()
+        existing_paper = db.scalar(select(Paper).where(Paper.project_id == pid).limit(1))
+        if not existing_paper:
+            p = Paper(
+                project_id=pid,
+                title=sample_data["digest"]["title"],
+                abstract=sample_data["digest"]["method_summary"],
+                selected=True,
+                source="Sample",
+                status="indexed",
+            )
+            db.add(p)
+            db.flush()
+        project.analysis = {**project.analysis, "ideator": sample_data}
+        flag_modified(project, "analysis")
+        project.status = "ideated"
+        db.commit()
+        return sample_data
+
+    chunks = list(
+        db.scalars(
+            select(Chunk)
+            .join(Paper)
+            .where(Paper.project_id == pid, Paper.selected == True)
+            .order_by(Chunk.page)
+        )
+    )
+    if not chunks:
+        raise HTTPException(400, "Upload a research paper first or pick a sample paper.")
+
+    chunk_dicts = [{"page": c.page, "section": c.section, "text": c.text} for c in chunks]
+    context = prepare_paper_context(chunk_dicts)
+    paper = db.scalar(
+        select(Paper).where(Paper.project_id == pid, Paper.selected == True).limit(1)
+    )
+    paper_title = paper.title if paper else project.title
+
+    ideator_result = await __import__("asyncio").to_thread(
+        generate_thesis_proposals, context, paper_title, body.focus or project.question
+    )
+    project.analysis = {**project.analysis, "ideator": ideator_result}
+    flag_modified(project, "analysis")
+    project.status = "ideated"
+    db.commit()
+    return ideator_result
+
+
+@app.post("/api/projects/{pid}/refine-proposal")
+async def refine_proposal(
+    pid: str,
+    body: RefineRequest,
+    user=Depends(current_user),
+    db=Depends(db_session),
+):
+    project = active_project_for(db, pid, user)
+    ideator_data = project.analysis.get("ideator")
+    if not ideator_data or "proposals" not in ideator_data:
+        raise HTTPException(
+            400, "No proposals exist to refine. Generate proposals first."
+        )
+
+    target_prop = None
+    prop_index = -1
+    for i, p in enumerate(ideator_data["proposals"]):
+        if p.get("id") == body.proposal_id:
+            target_prop = p
+            prop_index = i
+            break
+    if not target_prop:
+        target_prop = ideator_data["proposals"][0]
+        prop_index = 0
+
+    history = [
+        {"role": m.role, "content": m.content}
+        for m in db.scalars(
+            select(Message)
+            .where(Message.project_id == pid)
+            .order_by(Message.created)
+            .limit(10)
+        )
+    ]
+
+    result = await __import__("asyncio").to_thread(
+        refine_proposal_chat,
+        target_prop,
+        ideator_data.get("digest", {}),
+        history,
+        body.message,
+    )
+
+    reply_text = result.get("reply", "Here is my advice on this project.")
+    updated_prop = result.get("updated_proposal")
+
+    if updated_prop and isinstance(updated_prop, dict):
+        for k, v in updated_prop.items():
+            if v:
+                target_prop[k] = v
+        ideator_data["proposals"][prop_index] = target_prop
+        project.analysis = {**project.analysis, "ideator": ideator_data}
+        flag_modified(project, "analysis")
+
+    db.add(Message(project_id=pid, role="user", content=body.message))
+    bot_msg = Message(
+        project_id=pid, role="assistant", content=reply_text, evidence=[]
+    )
+    db.add(bot_msg)
+    db.commit()
+
+    return {
+        "reply": reply_text,
+        "proposal": target_prop,
+        "ideator": ideator_data,
+    }
+
+
+@app.get("/api/projects/{pid}/proposals/{proposal_id}/export")
+def export_proposal(
+    pid: str,
+    proposal_id: str,
+    user=Depends(current_user),
+    db=Depends(db_session),
+):
+    project = project_for(db, pid, user)
+    ideator_data = project.analysis.get("ideator")
+    if not ideator_data:
+        raise HTTPException(404, "No ideator data found.")
+    target_prop = next(
+        (p for p in ideator_data.get("proposals", []) if p.get("id") == proposal_id),
+        None,
+    )
+    if not target_prop and ideator_data.get("proposals"):
+        target_prop = ideator_data["proposals"][0]
+    if not target_prop:
+        raise HTTPException(404, "Proposal not found.")
+
+    doc = generate_export_markdown(target_prop, ideator_data.get("digest", {}))
+    clean_title = re.sub(r"[^a-zA-Z0-9_-]", "_", target_prop.get("title", "proposal"))[:50]
+    filename = f"{clean_title}.md"
+    return Response(
+        content=doc,
+        media_type="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.get("/api/projects/{pid}/papers/{paper_id}/pdf")
@@ -748,6 +981,272 @@ def export(pid: str, user=Depends(current_user), db=Depends(db_session)):
         p.report,
         headers={"Content-Disposition": 'attachment; filename="researchos-review.md"'},
     )
+
+
+
+# ==============================================================================
+# Simple, Direct Research Paper RAG Endpoints (PDF -> Extract -> RAG -> Questions)
+# ==============================================================================
+
+from backend.rag_engine import SAMPLE_PAPERS, search_chunks, build_rag_answer
+
+class RagSampleRequest(BaseModel):
+    pid: str
+    sample: str = "attention"
+
+class RagAskRequest(BaseModel):
+    pid: str
+    question: str
+
+class RagResetRequest(BaseModel):
+    pid: str
+
+@app.get("/api/rag/status")
+def rag_status(pid: str, user=Depends(current_user), db=Depends(db_session)):
+    project = project_for(db, pid, user)
+    paper = db.scalar(
+        select(Paper).where(Paper.project_id == pid, Paper.selected == True).order_by(Paper.id.desc()).limit(1)
+    )
+    if not paper:
+        return {"has_paper": False, "paper": None, "chunks_count": 0, "pages_count": 0, "suggested_questions": []}
+    
+    chunks = list(db.scalars(select(Chunk).where(Chunk.paper_id == paper.id)))
+    pages = set(c.page for c in chunks)
+    
+    # Derive suggested questions from sample or paper metadata
+    suggested = [
+        "What is the primary contribution of this paper?",
+        "What methodology and architecture does it propose?",
+        "What benchmark datasets and results were reported?",
+        "What limitations or shortcomings are discussed?"
+    ]
+    for s_key, s_data in SAMPLE_PAPERS.items():
+        if s_data["title"].lower() in paper.title.lower() or paper.title.lower() in s_data["title"].lower():
+            suggested = s_data.get("suggested_questions", suggested)
+            break
+
+    return {
+        "has_paper": True,
+        "paper": {
+            "id": paper.id,
+            "title": paper.title,
+            "authors": paper.authors,
+            "year": paper.year,
+            "abstract": paper.abstract,
+        },
+        "chunks_count": len(chunks),
+        "pages_count": len(pages) if pages else 1,
+        "suggested_questions": suggested,
+    }
+
+
+@app.post("/api/rag/sample")
+def rag_load_sample(body: RagSampleRequest, user=Depends(current_user), db=Depends(db_session)):
+    pid = body.pid
+    sample_key = body.sample if body.sample in SAMPLE_PAPERS else "attention"
+    s_data = SAMPLE_PAPERS[sample_key]
+
+    project_for(db, pid, user)
+    idle(db, pid)
+
+    # Clean existing papers/chunks for this project
+    papers = list(db.scalars(select(Paper).where(Paper.project_id == pid)))
+    for p in papers:
+        db.execute(delete(Chunk).where(Chunk.paper_id == p.id))
+        db.delete(p)
+    # Clear prior messages
+    db.execute(delete(Message).where(Message.project_id == pid))
+    db.flush()
+
+    new_paper = Paper(
+        project_id=pid,
+        title=s_data["title"],
+        authors=s_data["authors"],
+        year=s_data.get("year", 2024),
+        abstract=s_data["abstract"],
+        selected=True,
+        source="Sample",
+        status="indexed",
+    )
+    db.add(new_paper)
+    db.flush()
+
+    for item in s_data["chunks"]:
+        db.add(Chunk(
+            paper_id=new_paper.id,
+            page=item["page"],
+            section=item["section"],
+            text=item["text"]
+        ))
+    db.commit()
+
+    return {
+        "status": "ok",
+        "title": new_paper.title,
+        "chunks_count": len(s_data["chunks"]),
+        "pages_count": len(set(c["page"] for c in s_data["chunks"])),
+        "suggested_questions": s_data.get("suggested_questions", []),
+    }
+
+
+@app.post("/api/rag/upload")
+async def rag_upload_pdf(
+    pid: str = Form(...),
+    file: UploadFile = None,
+    user=Depends(current_user),
+    db=Depends(db_session),
+):
+    project_for(db, pid, user)
+    idle(db, pid)
+
+    if not file:
+        raise HTTPException(400, "Please provide a PDF file.")
+    raw = await file.read(25 * 1024 * 1024 + 1)
+    if len(raw) > 25 * 1024 * 1024:
+        raise HTTPException(413, "PDF must be smaller than 25 MB.")
+    
+    try:
+        chunks = await __import__("asyncio").to_thread(chunk_pdf, raw)
+    except Exception as exc:
+        raise HTTPException(422, str(exc) if isinstance(exc, ValueError) else "Unable to parse this PDF.")
+
+    filename = Path(file.filename or "Uploaded Research Paper.pdf").stem
+
+    # Clean previous paper for this project
+    papers = list(db.scalars(select(Paper).where(Paper.project_id == pid)))
+    for p in papers:
+        db.execute(delete(Chunk).where(Chunk.paper_id == p.id))
+        db.delete(p)
+    db.execute(delete(Message).where(Message.project_id == pid))
+    db.flush()
+
+    # Detect title and abstract from first chunks
+    first_chunk_text = chunks[0]["text"] if chunks else ""
+    title_candidate = filename
+    if len(first_chunk_text.splitlines()) > 0:
+        first_line = first_chunk_text.splitlines()[0].strip()
+        if 5 < len(first_line) < 160:
+            title_candidate = first_line
+
+    new_paper = Paper(
+        project_id=pid,
+        title=title_candidate[:300],
+        abstract=first_chunk_text[:1500],
+        selected=True,
+        source="Upload",
+        status="indexed",
+    )
+    db.add(new_paper)
+    db.flush()
+
+    for item in chunks:
+        db.add(Chunk(
+            paper_id=new_paper.id,
+            page=item["page"],
+            section=item["section"],
+            text=item["text"]
+        ))
+    db.commit()
+
+    pages = set(c["page"] for c in chunks)
+    return {
+        "status": "ok",
+        "title": new_paper.title,
+        "chunks_count": len(chunks),
+        "pages_count": len(pages),
+        "suggested_questions": [
+            "What is the primary contribution of this paper?",
+            "What methodology and architecture does it propose?",
+            "What benchmark datasets and results were reported?",
+            "What limitations or shortcomings are discussed?"
+        ]
+    }
+
+
+@app.post("/api/rag/ask")
+async def rag_ask(
+    body: RagAskRequest,
+    user=Depends(current_user),
+    db=Depends(db_session),
+):
+    pid = body.pid
+    question = body.question.strip()
+    if not question:
+        raise HTTPException(400, "Question cannot be empty.")
+
+    project_for(db, pid, user)
+    paper = db.scalar(
+        select(Paper).where(Paper.project_id == pid, Paper.selected == True).order_by(Paper.id.desc()).limit(1)
+    )
+    if not paper:
+        raise HTTPException(400, "No research paper uploaded yet. Please upload a PDF first.")
+
+    chunks = list(db.scalars(select(Chunk).where(Chunk.paper_id == paper.id)))
+    if not chunks:
+        raise HTTPException(400, "No readable chunks found in this paper.")
+
+    # Retrieve relevant chunks
+    matches = search_chunks(chunks, question, top_k=5)
+
+    # Fetch recent conversation history
+    history = [
+        {"role": m.role, "content": m.content}
+        for m in db.scalars(
+            select(Message).where(Message.project_id == pid).order_by(Message.created).limit(8)
+        )
+    ]
+
+    # Generate grounded RAG answer
+    answer = await __import__("asyncio").to_thread(
+        build_rag_answer, paper.title, question, matches, history
+    )
+
+    # Save to history
+    db.add(Message(project_id=pid, role="user", content=question))
+    assistant_msg = Message(
+        project_id=pid,
+        role="assistant",
+        content=answer,
+        evidence=[
+            {
+                "id": m["chunk_id"],
+                "page": m["page"],
+                "section": m["section"],
+                "snippet": m["snippet"],
+                "score": m["score"],
+            }
+            for m in matches
+        ]
+    )
+    db.add(assistant_msg)
+    db.commit()
+
+    return {
+        "answer": answer,
+        "citations": [
+            {
+                "chunk_id": m["chunk_id"],
+                "page": m["page"],
+                "section": m["section"],
+                "snippet": m["snippet"],
+                "score": m["score"],
+            }
+            for m in matches
+        ]
+    }
+
+
+@app.post("/api/rag/reset")
+def rag_reset(body: RagResetRequest, user=Depends(current_user), db=Depends(db_session)):
+    pid = body.pid
+    project_for(db, pid, user)
+    papers = list(db.scalars(select(Paper).where(Paper.project_id == pid)))
+    for p in papers:
+        db.execute(delete(Chunk).where(Chunk.paper_id == p.id))
+        db.delete(p)
+    db.execute(delete(Message).where(Message.project_id == pid))
+    db.commit()
+    return {"status": "ok"}
 
 
 dist_dir = Path("dist").resolve()

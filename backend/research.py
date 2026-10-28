@@ -781,7 +781,7 @@ def report_node(state):
             if gap['status']!='unsupported':
                 label='Source-supported gap' if gap.get('kind')=='source_gap' else 'Author-stated limitation'
                 lines.append(f"- **{label}: {gap['text']}** {cite({'text':gap.get('gap') or gap.get('rationale',''),'sources':gap['sources']})}")
-                for label,key in [('Why it matters','rationale'),('Study','next_step'),('Compare','comparison'),('Measure','measure')]:
+                for label,key in [('Why it matters','rationale'),('Study','next_step'),('Measure','measure')]:
                     if gap.get(key) and gap.get('kind')=='source_gap': lines.append(f"  **{label}:** {gap[key]}")
         if not any(gap['status']!='unsupported' for gap in current_gaps):
             lines.append('Older gap proposals require reanalysis against explicit source limitations.' if a.get('gaps') and not current_gaps else

@@ -40,8 +40,51 @@ export type Project = {
     papers?: { paper_id: string; title: string; claims: Claim[] }[];
     gaps?: Claim[];
     evidence?: Evidence[];
+    ideator?: IdeatorData;
   };
   plan: { queries?: string[]; scope?: string; warning?: string; ranking_warning?: string; coverage_note?: string; mode?: string };
+};
+
+export type RoadmapMilestone = {
+  phase: string;
+  task: string;
+  milestone: string;
+};
+
+export type ThesisProposal = {
+  id: string;
+  title: string;
+  category: "Direct Extension" | "Cross-Domain Application" | "Compute & Efficiency" | string;
+  tagline: string;
+  difficulty: "Accessible" | "Intermediate" | "Advanced" | string;
+  compute: string;
+  problem_statement: string;
+  hypothesis: string;
+  datasets_and_tools: string[];
+  roadmap: RoadmapMilestone[];
+  baseline_to_beat: string;
+  potential_risks?: string;
+};
+
+export type PaperDigest = {
+  title: string;
+  authors: string;
+  year?: number | string;
+  core_problem: string;
+  method_summary: string;
+  key_findings: string[];
+};
+
+export type PaperGap = {
+  area: string;
+  gap: string;
+  evidence: string;
+};
+
+export type IdeatorData = {
+  digest: PaperDigest;
+  gaps: PaperGap[];
+  proposals: ThesisProposal[];
 };
 export type Paper = {
   id: string;
@@ -71,3 +114,33 @@ export type Message = {
 };
 export type User = { name: string; email: string };
 export type ProjectSummary = Pick<Project, "id" | "title" | "created">;
+
+export interface RagCitation {
+  chunk_id: string;
+  page: number;
+  section: string;
+  snippet: string;
+  score: number;
+}
+
+export interface RagMessage {
+  id?: string;
+  role: "user" | "assistant";
+  content: string;
+  citations?: RagCitation[];
+  created?: string;
+}
+
+export interface RagPaperStatus {
+  has_paper: boolean;
+  paper: {
+    id?: string;
+    title: string;
+    authors?: string;
+    year?: number;
+    abstract?: string;
+  } | null;
+  chunks_count: number;
+  pages_count: number;
+  suggested_questions: string[];
+}

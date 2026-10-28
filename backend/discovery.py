@@ -6,7 +6,7 @@ import logging
 from backend import cache
 
 
-def query_list(value, limit=3):
+def query_list(value, limit=10):
     if not isinstance(value, list):
         return []
     return list(dict.fromkeys(x.strip() for x in value if isinstance(x, str) and 3 <= len(x.strip()) <= 300))[:limit]

@@ -50,7 +50,6 @@ export function ResearchGaps({ claims, evidence, status, note, busy, canRetry, o
           <h4>A study to test it</h4>
           <p>{claim.next_step}</p>
           <dl>
-            <div><dt>Compare</dt><dd>{claim.comparison}</dd></div>
             <div><dt>Measure</dt><dd>{claim.measure}</dd></div>
           </dl>
         </div> : <p className="gap-limit-note">This is a limitation reported by the authors. It has not been developed into a validated research gap.</p>}
