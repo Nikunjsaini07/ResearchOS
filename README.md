@@ -1,111 +1,76 @@
-# ResearchOS
+# ResearchOS · Research Paper RAG Assistant
 
-**ResearchOS turns a research question into a small, inspectable literature review.** It finds relevant academic papers or uses PDFs you upload, reads their text, and writes a sourced answer. You can open the passages behind a claim, ask follow-up questions, and download the review as Markdown.
+**ResearchOS turns any academic research paper into an interactive, grounded Q&A workspace.** Upload a PDF or explore landmark papers in 1-click. ResearchOS parses the document into structured page & section chunks, performs hybrid RAG retrieval, and generates answers with verifiable citations.
 
-[Try the live app](https://researchos-b9ap.onrender.com/) · [Read the detailed workflow and RAG guide](docs/researchos-rag-explained.md)
+---
 
-## What it does
+## Key Highlights
 
-Start with a question such as *“How do neural networks classify images?”* and optionally attach a PDF. ResearchOS then:
+- **Simple, Direct Flow:** No sign-ins, no 5-step hurdles. Drop a PDF or click an iconic paper (*Attention Is All You Need*, *LoRA*) to begin immediately.
+- **Section-Aware Extraction:** Breaks papers down by actual academic sections (*Abstract*, *Methods*, *Experiments*, *Results*, *Limitations*) tagged with exact page numbers.
+- **Grounded Answers:** Answers are synthesized directly from retrieved passages, complete with expandable source drawers showing verbatim excerpts and relevance scores.
+- **Dual-Pane Workspace:** Document summary, extraction statistics, and 1-click suggested questions on the left; conversational streaming chat on the right.
+- **Ultra-Responsive:** Adapts seamlessly across mobile, tablet, and widescreen desktop layouts.
 
-1. **Plans searches.** An AI planner translates the full question into up to three complementary academic queries and two broader alternatives. Keyword rules provide a fallback if AI is unavailable.
-2. **Finds papers.** It translates questions into academic terms with AI (with a keyword fallback), searches arXiv and OpenAlex, removes duplicates, ranks relevance to the full question, and selects up to six papers. One broader search is attempted when fewer than three useful matches are found. If you attached a PDF, the run uses the uploaded corpus instead.
-3. **Reads sources.** It extracts text from the selected PDFs, divides it into page-linked passages, and optionally creates embedding vectors for later retrieval. When full text is unavailable, arXiv or OpenAlex abstracts may be used and are labeled as such. Only allowed arXiv PDF URLs are downloaded.
-4. **Writes an answer and suggests next questions.** It sends relevant passages with your *full original question* to the configured LLM for a direct answer and supporting points. A separate call inspects limitations and conclusions to suggest up to three source-backed research directions, each with a practical next step.
-5. **Builds a review.** It assembles the answer, findings, search method, limitations, and references into a downloadable Markdown report. This formatting step does not make another LLM call.
+---
 
-The progress trail on the page corresponds to these five steps. The current conversation can use temporary passages for follow-up questions. Past conversations retain only the question, result text, and transcript. Guest access is created automatically; you can also create an account.
+## Architecture & Tech Stack
 
-## Where RAG fits
+| Layer | Technologies | Purpose |
+|---|---|---|
+| **Frontend** | React 18, TypeScript, Vite | Fluid UI, dual-pane layout, markdown rendering, responsive CSS |
+| **Backend API** | FastAPI, Uvicorn, Python 3.12 | REST API, PDF processing, session management |
+| **Database** | SQLAlchemy 2.0, SQLite | Persistence for papers, chunks, and conversation history |
+| **PDF Extraction** | pypdf | Text extraction, page boundary mapping, section header detection |
+| **RAG Retrieval** | Hybrid BM25 & Lexical overlap | Section-prioritized search over indexed document chunks |
+| **LLM Synthesis** | OpenRouter API | Grounded question answering with inline page/section citations |
 
-**Retrieval-Augmented Generation (RAG)** means finding relevant material outside the model, adding that material to the prompt, and then generating an answer. Here, the material is extracted passages from the selected papers. The papers are **not used to train or fine-tune** the LLM.
+For an in-depth breakdown of algorithms, mathematical scoring formulas, database schemas, and endpoints, see [DOCUMENTATION.md](DOCUMENTATION.md).
 
-ResearchOS currently has two retrieval paths:
+---
 
-- **Initial report:** it selects an abstract and up to one other passage per paper using question-word overlap and section cues. Those excerpts are given to the LLM to produce the first answer. Embeddings may be stored, but vector similarity is **not** used to choose these initial excerpts.
-- **Follow-up chat:** it searches the indexed passages for the new question. When embeddings are available, the ranking combines keyword overlap (55%) and semantic similarity (45%); otherwise it uses keywords. The retrieved passages become context for the follow-up LLM answer.
+## Quick Start (Local Run)
 
-Source links make the output inspectable, but they do not automatically prove that an interpretation is correct. Claims begin marked as needing review. [The RAG guide](docs/researchos-rag-explained.md) explains indexing, retrieval, prompts, citations, and these limits in more depth.
+### 1. Configure Environment
+```bash
+cp .env.example .env
+```
+Ensure your `.env` contains:
+```ini
+DATABASE_URL=sqlite:///./data/researchos.db
+LLM_API_KEY=your_openrouter_key_here
+LLM_BASE_URL=https://openrouter.ai/api/v1
+LLM_MODEL=openrouter/free
+```
 
-## Technology
-
-| Part | Used for |
-| --- | --- |
-| **React + TypeScript + Vite** | Responsive question composer, research workspace, source views, and progress display. |
-| **Python + FastAPI + Uvicorn** | Same-origin API, session handling, uploads, queued research jobs, and follow-up chat. |
-| **LangGraph** | Runs the fixed `plan → discover → index → analyze → report` workflow. |
-| **HTTPX + arXiv API** | Academic search and PDF downloads; DataCite is a fallback for arXiv records. |
-| **pypdf** | Extracts PDF text into page-linked passages. |
-| **SQLAlchemy + PostgreSQL/SQLite** | Stores users, projects, papers, passages, vectors, jobs, reports, and messages. SQLite is the local default. |
-| **pgvector** | Vector similarity search on PostgreSQL when embeddings are configured. |
-| **OpenAI-compatible APIs** | Configurable LLM for answers and optional embedding model for semantic retrieval. |
-| **Docker** | Builds the frontend and runs the API; the deployed app uses Render. Redis can optionally cache searches. |
-
-The browser calls `/api` on the same site. Provider credentials stay on the server, and the browser session uses an HTTP-only cookie.
-
-## Accounts and saved research
-
-ResearchOS starts with a private guest session. **Conversation history** lists saved questions, results, and conversation text. History is read-only; start a new question to research further. Creating an account claims the current guest history; signing in to an existing account also moves that browser's guest history into the account. **Sign out** is available from the account menu. The login cookie lasts 30 days and is renewed when the app is opened.
-
-New PDFs are processed and discarded after extraction. Passages, embeddings, paper records, and evidence are temporary working data for the open conversation. Leaving the page, opening history, or signing out closes that workspace. Abandoned workspaces expire after one hour without a research action, with cleanup checked every minute. A running job finishes before cleanup, so its result is preserved. History retains result Markdown and message text (including reference titles/URLs), with no PDFs or retrieval index. Existing workspaces from older versions are converted to text history at startup; legacy PDF deletion is retried if storage is unavailable.
-
-The cookie contains only a random session token. Accounts and text history need a persistent database across deployments; no PDF storage bucket is needed for new research. See [Supabase setup](docs/supabase-setup.md).
-
-## Run locally on Windows
-
-From the repository root:
-
+### 2. Backend Setup
 ```powershell
-Copy-Item .env.example .env
 python -m venv .venv
-.\.venv\Scripts\python -m pip install -r backend\requirements.lock.txt
-npm ci
+.\.venv\Scripts\activate
+pip install -r backend/requirements.lock.txt
+python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-Start the API in one terminal:
-
+### 3. Frontend Setup
 ```powershell
-.\.venv\Scripts\python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
-```
-
-Start the frontend in another:
-
-```powershell
+npm install
 npm run dev
 ```
 
-Open **http://127.0.0.1:5173**. Vite forwards `/api` requests to the Python server. To serve the built frontend through FastAPI, run `npm run build` before starting the API, then open **http://127.0.0.1:8000**.
+Open **[http://127.0.0.1:5173](http://127.0.0.1:5173)** in your browser.
 
-The example `.env` uses SQLite. Paper search, uploads, and keyword retrieval can run without an AI key; a synthesized answer requires `LLM_API_KEY`. Embeddings additionally require an enabled embedding provider. Do not commit `.env` or put provider keys in frontend code. For server setup, see [configuration and Docker](docs/setup-and-reference.md) or [Supabase setup](docs/supabase-setup.md).
+---
 
-## Code map
+## API Summary
 
-| File | Role |
-| --- | --- |
-| `src/App.tsx` | Screens, submit handler, progress polling, answer and source views. |
-| `src/api.ts` | Browser requests to the backend. |
-| `backend/main.py` | API routes, auth, job worker, uploads, and chat. |
-| `backend/research.py` | Query rules, paper discovery, PDF chunking, retrieval, LLM synthesis, and reports. |
-| `backend/db.py` | Database schema, including passages and optional vectors. |
-| `backend/history.py` | Text history, workspace expiry, and removal of temporary research data. |
-| `backend/storage.py` | Reading and deleting legacy PDFs; new PDFs are not saved. |
-| `backend/cache.py` | Optional Redis search cache. |
+- `GET /api/rag/status?pid={projectId}`: Check workspace status, page counts, and suggested questions.
+- `POST /api/rag/upload`: Upload and index a PDF file (multipart form data).
+- `POST /api/rag/sample`: Ingest a 1-click sample paper (`attention` or `lora`).
+- `POST /api/rag/ask`: Query the paper and receive a grounded answer with citations.
+- `POST /api/rag/reset`: Reset the workspace and start fresh.
 
-To follow one question through the code, start at `begin` in `src/App.tsx`, then `run` and `worker` in `backend/main.py`, then the `auto_*` stages in `backend/research.py`.
+---
 
-## Current limits
+## Documentation
 
-- This is a **focused review**, not an exhaustive systematic search. Automatic discovery searches arXiv and OpenAlex and selects at most six papers; users can adjust the selection, up to 20 per run.
-- The first answer sees sampled excerpts, not entire PDFs. It can miss a relevant result elsewhere in a paper.
-- Scanned PDFs need OCR before text can be extracted. Uploads are limited to 25 MB and 300 pages.
-- A linked passage supports inspection, not automatic scientific verification. Check important claims in the original paper.
-- Research directions are suggestions grounded in quoted passages from this small corpus. They are not proof that a topic is unstudied; inspect the cited papers and search more widely before treating one as a gap.
-- External search and AI providers may be unavailable or rate-limit requests. An interrupted server-side job can be retried.
-
-### Search configuration
-
-`OPENALEX_API_KEY` is optional and increases the provider budget. Search uses at most three initial queries and two broader alternatives per provider. AI planning and relevance ranking use up to two model attempts per phase; unavailable or malformed responses fall back to lexical search. These calls consume the configured AI provider quota. Search metadata caching expires after one hour. No additional permanent research storage or PDF storage is introduced.
-
-Research directions run independently of the answer. If AI generation fails, explicit author-stated limitations can be extracted with exact source quotes. The UI distinguishes provider failure from insufficient evidence. Partial search matches can produce a qualified answer; unrelated results still stop the review. Free AI provider quotas and missing full text can limit completion.
-
-Research gaps must cite an explicit unresolved source issue and include what remains unknown, a study, comparison conditions and outcome measures. Reported achievements alone do not qualify. Extracted author limitations are labeled separately, and older gap proposals need regeneration before appearing as validated gaps. The workspace tabs are Answer, Sources and Research gaps.
+- Full system architecture, database schema, and scoring logic: **[DOCUMENTATION.md](DOCUMENTATION.md)**
